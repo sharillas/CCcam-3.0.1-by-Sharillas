@@ -7,6 +7,7 @@
 #include "cccam3_card_manager.h"
 #include "cccam3_hop_control.h"
 #include "cccam3_rest_api.h"
+#include "cccam3_web_interface.h"
 
 #include <stdio.h>
 #include <stdlib.h>
