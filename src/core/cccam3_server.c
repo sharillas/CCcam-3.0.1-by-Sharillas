@@ -7,6 +7,7 @@
 #include "cccam3_card_manager.h"
 #include "cccam3_hop_control.h"
 #include "cccam3_rest_api.h"
+#include "cccam3_user_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +61,11 @@ int cccam3_init(cccam_config_t *config) {
 
     if (cccam_hop_control_init() != 0) {
         cccam_log(LOG_ERROR, "Falha ao inicializar Hop Control");
+        return -1;
+    }
+
+    if (cccam_user_manager_init() != 0) {
+        cccam_log(LOG_ERROR, "Falha ao inicializar User Manager");
         return -1;
     }
 
@@ -177,6 +183,7 @@ void cccam3_cleanup(void) {
         close(g_server_fd);
         g_server_fd = -1;
     }
+    cccam_user_manager_cleanup();
     cccam_rest_api_cleanup();
     cccam_hop_control_cleanup();
     cccam_card_manager_cleanup();
