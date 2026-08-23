@@ -14,11 +14,13 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/core/cccam3_client.c \
           $(SRC_DIR)/core/cccam3_logger.c \
           $(SRC_DIR)/core/cccam3_utils.c \
+          $(SRC_DIR)/core/cccam3_optimizer.c \
           $(SRC_DIR)/network/cccam3_protocol.c \
           $(SRC_DIR)/network/cccam3_handshake.c \
           $(SRC_DIR)/network/cccam3_handshake_advanced.c \
           $(SRC_DIR)/network/cccam3_crypto.c \
           $(SRC_DIR)/network/cccam3_crypto_advanced.c \
+          $(SRC_DIR)/network/cccam3_protocol_newcamd.c \
           $(SRC_DIR)/hardware/cccam3_dvbapi.c \
           $(SRC_DIR)/hardware/cccam3_stapi.c \
           $(SRC_DIR)/CCshare/cccam3_cache.c \
@@ -32,7 +34,7 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
 OBJECTS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SOURCES))
 TARGET = $(BIN_DIR)/cccam3
 
-.PHONY: all clean test install uninstall
+.PHONY: all clean test install uninstall docs dist
 
 all: $(TARGET)
 
@@ -60,6 +62,18 @@ install: $(TARGET)
 uninstall:
 	rm -f /usr/local/bin/cccam3
 	@echo "🗑️ CCcam3 removido."
+
+docs:
+	@echo "📚 Gerando documentação..."
+	@cat docs/INSTALL.md docs/API.md > docs/README_FULL.md
+	@echo "✅ Documentação gerada em docs/README_FULL.md"
+
+dist: clean docs
+	@echo "📦 Criando pacote de distribuição..."
+	mkdir -p dist/cccam3
+	cp -r src include conf docs Makefile README.md LICENSE dist/cccam3/
+	cd dist && tar -czf cccam3-$(shell date +%Y%m%d).tar.gz cccam3/
+	@echo "✅ Pacote criado em dist/cccam3-$(shell date +%Y%m%d).tar.gz"
 
 # Cross-compile para MIPS
 mips:
