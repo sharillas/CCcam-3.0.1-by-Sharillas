@@ -10,6 +10,7 @@
 #include "cccam3_web_interface.h"
 #include "cccam3_user_manager.h"
 #include "cccam3_crypto_advanced.h"
+#include "cccam3_handshake_advanced.h"
 
 #include <stdio.h>
 #include <stdlib.h>
