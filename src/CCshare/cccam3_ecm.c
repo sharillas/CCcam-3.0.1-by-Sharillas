@@ -4,6 +4,7 @@
 #include "cccam3_logger.h"
 #include "cccam3_protocol.h"
 #include "cccam3_card_manager.h"
+#include "cccam3_hop_control.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -74,6 +75,18 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
     response->sid = request->sid;
     response->hop = request->hop;
     response->generated_at = time(NULL);
+
+    // --- PASSO 0: Verificar Hop ---
+    if (!cccam_hop_control_check(request->caid, request->provid, request->sid, 
+                                  request->hop, request->client_id)) {
+        cccam_log(LOG_WARN, "CCshare: ECM %s - HOP BLOQUEADO (hop %d)", info, request->hop);
+        response->found = 0;
+        return -1; // Bloqueado por hop
+    }
+
+    // Registar o pedido para controlo de hops
+    cccam_hop_control_register(request->caid, request->provid, request->sid,
+                                request->hop, request->client_id);
 
     // --- PASSO 1: Verificar na Cache ---
     uint8_t hop_out;
