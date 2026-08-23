@@ -1,54 +1,56 @@
-#include "cccam3_protocol.h"
-#include "cccam3_crypto.h"
-#include "cccam3_utils.h"
+#include "cccam3_handshake_advanced.h"
 #include "cccam3_logger.h"
 #include <string.h>
-#include <time.h>
 
 int cccam_protocol_handle_login(cccam_login_msg_t *login,
                                 uint8_t *response_handshake) {
     if (!login || !response_handshake) {
+        cccam_log(LOG_ERROR, "CCshare: Handshake - parâmetros inválidos");
         return -1;
     }
 
-    cccam_log(LOG_INFO, "Handshake: Cliente %s (versão %u)", 
+    cccam_log(LOG_INFO, "CCshare: Handshake iniciado com cliente %s (versão %u)", 
               login->username, login->version);
 
-    // 1. Validar credenciais (TODO: integrar com sistema de utilizadores)
-    // Por agora, aceita qualquer login para teste
+    // Verifica se o cliente suporta RSA (através de uma flag na versão ou mensagem)
+    // Por enquanto, usa o modo legado por omissão para compatibilidade
+    uint8_t client_mode = HANDSHAKE_MODE_LEGACY;
+    
+    // TODO: Detetar modo do cliente a partir da mensagem de login
+    // Se a versão for >= 3.0, assume suporte a RSA
+    if (login->version >= 300) {
+        client_mode = HANDSHAKE_MODE_RSA_AES;
+        cccam_log(LOG_DEBUG, "CCshare: Cliente suporta RSA_AES (versão %u)", login->version);
+    }
 
-    // 2. Gerar seed de resposta
-    cccam_generate_seed(response_handshake, 16);
+    // Negocia o melhor modo disponível
+    uint8_t mode = cccam_handshake_negotiate_mode(client_mode);
 
-    // 3. Derivar chave de encriptação
-    // SHA1(client_seed + server_seed + password)
-    uint8_t combined[16 + 16 + 64];
-    memcpy(combined, login->handshake, 16);
-    memcpy(combined + 16, response_handshake, 16);
-    strcpy((char *)combined + 32, login->password);
-
-    uint8_t crypto_key[20];
-    cccam_sha1(combined, 32 + strlen(login->password), crypto_key);
-
-    // 4. Configurar encriptação (RC4 por omissão para compatibilidade)
-    cccam_protocol_set_crypto(CCCAM_CRYPT_MODE_RC4, crypto_key, 20);
-
-    cccam_log(LOG_DEBUG, "Handshake concluído, chave de encriptação derivada");
-    return 0;
+    if (mode >= HANDSHAKE_MODE_RSA_AES) {
+        cccam_log(LOG_DEBUG, "CCshare: Usando handshake RSA_AES");
+        return cccam_handshake_rsa_server(login, response_handshake);
+    } else {
+        cccam_log(LOG_DEBUG, "CCshare: Usando handshake LEGACY (SHA1+RC4)");
+        return cccam_handshake_legacy_server(login, response_handshake);
+    }
 }
 
 int cccam_protocol_handle_login_response(cccam_login_msg_t *login,
                                          const uint8_t *server_handshake) {
-    // Cliente: processar resposta do servidor
-    // Derivar a mesma chave de encriptação
-    uint8_t combined[16 + 16 + 64];
-    memcpy(combined, login->handshake, 16);
-    memcpy(combined + 16, server_handshake, 16);
-    strcpy((char *)combined + 32, login->password);
+    if (!login || !server_handshake) {
+        cccam_log(LOG_ERROR, "CCshare: Handshake response - parâmetros inválidos");
+        return -1;
+    }
 
-    uint8_t crypto_key[20];
-    cccam_sha1(combined, 32 + strlen(login->password), crypto_key);
+    cccam_log(LOG_INFO, "CCshare: Handshake response recebido do servidor");
 
-    cccam_protocol_set_crypto(CCCAM_CRYPT_MODE_RC4, crypto_key, 20);
-    return 0;
+    // Verifica se o servidor está a usar RSA (deteta pelo tamanho da resposta)
+    // Por enquanto, assume legado
+    uint8_t mode = cccam_handshake_get_mode();
+
+    if (mode >= HANDSHAKE_MODE_RSA_AES) {
+        return cccam_handshake_rsa_client(login, server_handshake);
+    } else {
+        return cccam_handshake_legacy_client(login, server_handshake);
+    }
 }
