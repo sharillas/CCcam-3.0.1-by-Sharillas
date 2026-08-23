@@ -29,27 +29,10 @@ static int g_cache_misses = 0;
 
 // --- Funções Auxiliares Internas ---
 
-// Função hash simples para indexar a cache
-static uint32_t cache_hash(uint16_t caid, uint16_t provid, uint16_t sid) {
-    uint32_t hash = 0;
-    hash ^= (uint32_t)caid << 16;
-    hash ^= (uint32_t)provid << 8;
-    hash ^= (uint32_t)sid;
-    hash ^= (hash >> 16);
-    return hash;
-}
-
 // Compara se duas entradas são iguais (mesmo CAID/Provid/SID)
 static int cache_match(cache_entry_t *entry, uint16_t caid, uint16_t provid, uint16_t sid) {
     if (!entry || !entry->valid) return 0;
     return (entry->caid == caid && entry->provid == provid && entry->sid == sid);
-}
-
-// Verifica se uma entrada expirou
-static int cache_is_expired(cache_entry_t *entry) {
-    if (!entry || !entry->valid) return 1;
-    time_t now = time(NULL);
-    return (now > entry->expires_at);
 }
 
 // --- Implementação das Funções da API ---
