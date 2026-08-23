@@ -1,0 +1,17 @@
+# Ficheiro de Utilizadores CCcam3
+# Formato: username = password (hop)
+
+[user]
+username = sharillas
+password = 123456
+hops = 1
+
+[user]
+username = cliente1
+password = senha123
+hops = 2
+
+[user]
+username = amigo
+password = amigo2025
+hops = 1
