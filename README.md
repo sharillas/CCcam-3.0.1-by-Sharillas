@@ -31,7 +31,7 @@
 | Encriptação AES-GCM | ✅ | Modo autenticado (confidencialidade + integridade) |
 | Troca de chaves RSA | ✅ | Handshake seguro com RSA 2048 bits |
 | Cache de CWs | ✅ | Reduz latência no zapping |
-| DVB-API / STAPI | 🚧 | Interface com hardware (em desenvolvimento) |
+| DVB-API / STAPI | ✅ | Interface com hardware |
 | Logging configurável | ✅ | Múltiplos níveis (ERROR, WARN, INFO, DEBUG, TRACE) |
 | Gestão de utilizadores | ✅ | Níveis de acesso e limites de hops por utilizador |
 | API REST | ✅ | Monitorização e gestão remota |
