@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <time.h>
+#include <netinet/in.h>
 
 // --- Estruturas de Cliente ---
 typedef struct {
@@ -20,6 +21,7 @@ typedef struct {
     int is_authenticated;
     int hop_count;
     uint8_t node_id[8];
+    struct sockaddr_in addr;
 } cccam_client_t;
 
 // --- Estruturas de Mensagens ---
