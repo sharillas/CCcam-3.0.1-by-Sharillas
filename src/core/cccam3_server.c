@@ -4,6 +4,9 @@
 #include "cccam3_cache.h"
 #include "cccam3_ecm.h"
 #include "cccam3_client.h"
+#include "cccam3_card_manager.h"
+#include "cccam3_hop_control.h"
+#include "cccam3_rest_api.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +51,21 @@ int cccam3_init(cccam_config_t *config) {
     if (cccam_ecm_init() != 0) {
         cccam_log(LOG_ERROR, "Falha ao inicializar ECM handler");
         return -1;
+    }
+
+    if (cccam_card_manager_init() != 0) {
+        cccam_log(LOG_ERROR, "Falha ao inicializar Card Manager");
+        return -1;
+    }
+
+    if (cccam_hop_control_init() != 0) {
+        cccam_log(LOG_ERROR, "Falha ao inicializar Hop Control");
+        return -1;
+    }
+
+    // Inicializar API REST
+    if (cccam_rest_api_init(REST_API_DEFAULT_PORT) != 0) {
+        cccam_log(LOG_WARN, "Falha ao iniciar API REST (porta %d)", REST_API_DEFAULT_PORT);
     }
 
     // Criar socket
@@ -159,6 +177,9 @@ void cccam3_cleanup(void) {
         close(g_server_fd);
         g_server_fd = -1;
     }
+    cccam_rest_api_cleanup();
+    cccam_hop_control_cleanup();
+    cccam_card_manager_cleanup();
     cccam_cache_cleanup();
     cccam_ecm_cleanup();
     cccam_protocol_cleanup();
