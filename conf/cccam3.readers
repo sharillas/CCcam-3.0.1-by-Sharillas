@@ -1,0 +1,30 @@
+# Ficheiro de configuração de leitores CCcam3
+# Cada leitor é definido numa secção [nome]
+
+[Local_Reader]
+type = local
+caid = 0100
+provid = 0000
+hop = 1
+priority = 0
+enabled = 1
+
+[Remote_Reader]
+type = remote
+caid = 0500
+provid = 0000
+hop = 2
+priority = 1
+enabled = 1
+remote_host = 127.0.0.1
+remote_port = 12001
+remote_user = user
+remote_pass = pass
+
+[EMU_Reader]
+type = emu
+caid = 0000
+provid = 0000
+hop = 0
+priority = 2
+enabled = 1
