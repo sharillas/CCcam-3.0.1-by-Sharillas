@@ -150,6 +150,19 @@ int cccam_load_config(const char *config_file, cccam_config_t *config) {
             continue;
         }
         
+        // Parsing da secção [user_manager]
+        if (strcmp(current_section, "user_manager") == 0) {
+            char *key, *value;
+            char *colon = strchr(p, '=');
+            if (colon) {
+                *colon = '\0';
+                key = trim(p);
+                value = trim(colon + 1);
+                // Armazenar configuração se necessário
+            }
+            continue;
+        }
+        
         // Parsing normal para as outras secções
         parse_line(p, config);
     }
@@ -180,4 +193,5 @@ void cccam_print_config(cccam_config_t *config) {
               cccam_rest_api_is_running() ? "ativa" : "inativa", 
               cccam_rest_api_get_port());
     cccam_log(LOG_INFO, "Interface Web: %s", cccam_rest_api_is_running() ? "ativa" : "inativa");
+    cccam_log(LOG_INFO, "Utilizadores: %d", cccam_user_manager_get_count());
 }
