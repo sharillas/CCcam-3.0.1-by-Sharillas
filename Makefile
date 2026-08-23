@@ -2,7 +2,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -Iinclude -DUSE_OPENSSL
-LDFLAGS = -lssl -lcrypto -lm
+LDFLAGS = -lssl -lcrypto -lm -lpthread
 
 SRC_DIR = src
 OBJ_DIR = obj
@@ -22,7 +22,8 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/CCshare/cccam3_cache.c \
           $(SRC_DIR)/CCshare/cccam3_ecm.c \
           $(SRC_DIR)/CCshare/cccam3_card_manager.c \
-          $(SRC_DIR)/CCshare/cccam3_hop_control.c
+          $(SRC_DIR)/CCshare/cccam3_hop_control.c \
+          $(SRC_DIR)/api/cccam3_rest_api.c
 
 OBJECTS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SOURCES))
 TARGET = $(BIN_DIR)/cccam3
