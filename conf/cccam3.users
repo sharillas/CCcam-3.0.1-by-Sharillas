@@ -1,0 +1,25 @@
+# Ficheiro de utilizadores CCcam3
+# Formato: [username]
+# password = password
+# level = 0=Desativado, 1=User, 2=Admin, 3=Root
+# max_hops = Limite de hops (0 = sem limite)
+
+[admin]
+password = admin123
+level = 3
+max_hops = 0
+
+[cliente1]
+password = 123456
+level = 1
+max_hops = 2
+
+[cliente2]
+password = senha123
+level = 1
+max_hops = 3
+
+[teste]
+password = teste
+level = 1
+max_hops = 1
