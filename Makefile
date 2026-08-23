@@ -23,7 +23,8 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/CCshare/cccam3_ecm.c \
           $(SRC_DIR)/CCshare/cccam3_card_manager.c \
           $(SRC_DIR)/CCshare/cccam3_hop_control.c \
-          $(SRC_DIR)/api/cccam3_rest_api.c
+          $(SRC_DIR)/api/cccam3_rest_api.c \
+          $(SRC_DIR)/api/cccam3_web_interface.c
 
 OBJECTS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SOURCES))
 TARGET = $(BIN_DIR)/cccam3
