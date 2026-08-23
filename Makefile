@@ -16,6 +16,7 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/core/cccam3_utils.c \
           $(SRC_DIR)/network/cccam3_protocol.c \
           $(SRC_DIR)/network/cccam3_handshake.c \
+          $(SRC_DIR)/network/cccam3_handshake_advanced.c \
           $(SRC_DIR)/network/cccam3_crypto.c \
           $(SRC_DIR)/network/cccam3_crypto_advanced.c \
           $(SRC_DIR)/hardware/cccam3_dvbapi.c \
