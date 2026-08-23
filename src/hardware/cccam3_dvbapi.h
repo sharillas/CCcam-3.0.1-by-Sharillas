@@ -3,6 +3,24 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <time.h>
+
+// --- Constantes ---
+#define DVBAPI_SOCKET_PATH "/tmp/camd.socket"
+#define DVBAPI_BUFFER_SIZE 4096
+#define DVBAPI_MAX_DEMUX 8
+
+// --- Estruturas ---
+typedef struct {
+    int fd;
+    int demux_id;
+    uint16_t caid;
+    uint16_t sid;
+    uint8_t enabled;
+    uint8_t ecm_data[256];
+    uint16_t ecm_len;
+    time_t last_ecm;
+} cccam_dvbapi_demux_t;
 
 // --- Funções ---
 
