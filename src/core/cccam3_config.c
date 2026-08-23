@@ -1,5 +1,6 @@
 #include "cccam3.h"
 #include "cccam3_logger.h"
+#include "cccam3_hop_control.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,10 +47,13 @@ static int parse_line(char *line, cccam_config_t *config) {
         config->enable_cache = (strcmp(value, "1") == 0 || strcmp(value, "yes") == 0);
     } else if (strcmp(key, "cache_timeout") == 0) {
         config->cache_timeout = atoi(value);
+        cccam_cache_set_timeout(atoi(value));
     } else if (strcmp(key, "log_level") == 0) {
         config->log_level = atoi(value);
     } else if (strcmp(key, "log_file") == 0) {
         strncpy(config->log_file, value, sizeof(config->log_file) - 1);
+    } else if (strcmp(key, "max_hops") == 0) {
+        cccam_hop_control_set_limit((uint8_t)atoi(value));
     }
     
     return 0;
@@ -59,6 +63,7 @@ int cccam_load_config(const char *config_file, cccam_config_t *config) {
     FILE *fp;
     char line[256];
     int line_num = 0;
+    char current_section[64] = "";
     
     if (!config) {
         config = &g_config;
@@ -85,6 +90,32 @@ int cccam_load_config(const char *config_file, cccam_config_t *config) {
         char *nl = strchr(p, '\n');
         if (nl) *nl = '\0';
         
+        // Verifica se é uma secção
+        if (*p == '[') {
+            char *end = strchr(p, ']');
+            if (end) {
+                *end = '\0';
+                strncpy(current_section, p + 1, sizeof(current_section) - 1);
+            }
+            continue;
+        }
+        
+        // Se estiver na secção [hop_control], usa o hop_control
+        if (strcmp(current_section, "hop_control") == 0) {
+            char *key, *value;
+            char *colon = strchr(p, '=');
+            if (colon) {
+                *colon = '\0';
+                key = trim(p);
+                value = trim(colon + 1);
+                if (strcmp(key, "max_hops") == 0) {
+                    cccam_hop_control_set_limit((uint8_t)atoi(value));
+                }
+            }
+            continue;
+        }
+        
+        // Parsing normal para as outras secções
         parse_line(p, config);
     }
     
@@ -109,4 +140,5 @@ void cccam_print_config(cccam_config_t *config) {
     if (config->log_file[0] != '\0') {
         cccam_log(LOG_INFO, "Ficheiro de Log: %s", config->log_file);
     }
+    cccam_log(LOG_INFO, "Limite de Hops: %d", cccam_hop_control_get_limit());
 }
