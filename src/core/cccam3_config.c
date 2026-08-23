@@ -1,6 +1,7 @@
 #include "cccam3.h"
 #include "cccam3_logger.h"
 #include "cccam3_hop_control.h"
+#include "cccam3_rest_api.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -100,7 +101,7 @@ int cccam_load_config(const char *config_file, cccam_config_t *config) {
             continue;
         }
         
-        // Se estiver na secção [hop_control], usa o hop_control
+        // Parsing da secção [hop_control]
         if (strcmp(current_section, "hop_control") == 0) {
             char *key, *value;
             char *colon = strchr(p, '=');
@@ -110,6 +111,24 @@ int cccam_load_config(const char *config_file, cccam_config_t *config) {
                 value = trim(colon + 1);
                 if (strcmp(key, "max_hops") == 0) {
                     cccam_hop_control_set_limit((uint8_t)atoi(value));
+                }
+            }
+            continue;
+        }
+        
+        // Parsing da secção [rest_api]
+        if (strcmp(current_section, "rest_api") == 0) {
+            char *key, *value;
+            char *colon = strchr(p, '=');
+            if (colon) {
+                *colon = '\0';
+                key = trim(p);
+                value = trim(colon + 1);
+                if (strcmp(key, "port") == 0) {
+                    // A porta será usada no cccam3_init
+                    // Armazenar numa variável global se necessário
+                } else if (strcmp(key, "enabled") == 0) {
+                    // Será verificado no cccam3_init
                 }
             }
             continue;
@@ -141,4 +160,7 @@ void cccam_print_config(cccam_config_t *config) {
         cccam_log(LOG_INFO, "Ficheiro de Log: %s", config->log_file);
     }
     cccam_log(LOG_INFO, "Limite de Hops: %d", cccam_hop_control_get_limit());
+    cccam_log(LOG_INFO, "API REST: %s (porta %d)", 
+              cccam_rest_api_is_running() ? "ativa" : "inativa", 
+              cccam_rest_api_get_port());
 }
