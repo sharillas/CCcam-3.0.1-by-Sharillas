@@ -4,6 +4,8 @@
 #include "cccam3_structs.h"
 #include "cccam3_cache.h"
 #include "cccam3_ecm.h"
+#include "cccam3_card_manager.h"
+#include "cccam3_hop_control.h"
 
 #include <stdio.h>
 #include <stdlib.h>
