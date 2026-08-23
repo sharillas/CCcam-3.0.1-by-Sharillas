@@ -35,32 +35,32 @@
 ---
 
 ## 🏗️ Arquitetura
+
+```
 cccam3/
-├── src/
-│ ├── core/ # Núcleo do servidor
-│ │ ├── cccam3_server.c
-│ │ ├── cccam3_config.c
-│ │ ├── cccam3_client.c
-│ │ ├── cccam3_logger.c
-│ │ └── cccam3_utils.c
-│ ├── network/ # Camada de rede e protocolo
-│ │ ├── cccam3_protocol.c
-│ │ ├── cccam3_protocol.h
-│ │ ├── cccam3_handshake.c
-│ │ └── cccam3_crypto.c
-│ └── hardware/ # Interface com DVB-API/STAPI
-│ ├── cccam3_dvbapi.c
-│ └── cccam3_stapi.c
-├── include/ # Cabeçalhos públicos
-│ ├── cccam3.h
-│ └── cccam3_structs.h
-├── conf/ # Ficheiros de configuração
-│ ├── cccam3.conf
-│ └── cccam3.user
-└── docs/ # Documentação
-
-
----
++-- src/
+|   +-- core/
+|   |   +-- cccam3_server.c
+|   |   +-- cccam3_config.c
+|   |   +-- cccam3_client.c
+|   |   +-- cccam3_logger.c
+|   |   +-- cccam3_utils.c
+|   +-- network/
+|   |   +-- cccam3_protocol.c
+|   |   +-- cccam3_protocol.h
+|   |   +-- cccam3_handshake.c
+|   |   +-- cccam3_crypto.c
+|   +-- hardware/
+|       +-- cccam3_dvbapi.c
+|       +-- cccam3_stapi.c
++-- include/
+|   +-- cccam3.h
+|   +-- cccam3_structs.h
++-- conf/
+|   +-- cccam3.conf
+|   +-- cccam3.user
++-- docs/
+```
 
 ## 🔒 Segurança
 
