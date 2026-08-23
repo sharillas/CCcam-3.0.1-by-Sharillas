@@ -8,29 +8,46 @@ SRC_DIR = src
 OBJ_DIR = obj
 BIN_DIR = bin
 
-SOURCES = $(wildcard $(SRC_DIR)/core/*.c) \
-          $(wildcard $(SRC_DIR)/network/*.c) \
-          $(wildcard $(SRC_DIR)/hardware/*.c)
+# Lista completa de ficheiros fonte
+SOURCES = $(SRC_DIR)/core/cccam3_server.c \
+          $(SRC_DIR)/core/cccam3_config.c \
+          $(SRC_DIR)/core/cccam3_client.c \
+          $(SRC_DIR)/core/cccam3_logger.c \
+          $(SRC_DIR)/core/cccam3_utils.c \
+          $(SRC_DIR)/network/cccam3_protocol.c \
+          $(SRC_DIR)/network/cccam3_handshake.c \
+          $(SRC_DIR)/network/cccam3_crypto.c \
+          $(SRC_DIR)/hardware/cccam3_dvbapi.c \
+          $(SRC_DIR)/hardware/cccam3_stapi.c
+
 OBJECTS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SOURCES))
 TARGET = $(BIN_DIR)/cccam3
 
-.PHONY: all clean
+.PHONY: all clean test install uninstall
 
 all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	@echo "✅ CCcam3 compilado com sucesso!"
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+test: $(TARGET)
+	@echo "🧪 A executar testes básicos..."
+	./$(TARGET) -t
+
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
+	@echo "🧹 Ficheiros objetos e binários removidos."
 
 install: $(TARGET)
 	cp $(TARGET) /usr/local/bin/
+	@echo "✅ CCcam3 instalado em /usr/local/bin/"
 
 uninstall:
 	rm -f /usr/local/bin/cccam3
+	@echo "🗑️ CCcam3 removido."
