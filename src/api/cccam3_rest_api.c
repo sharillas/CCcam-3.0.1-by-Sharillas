@@ -1,4 +1,5 @@
 #include "cccam3_rest_api.h"
+#include "cccam3_web_interface.h"
 #include "cccam3_logger.h"
 #include "cccam3_cache.h"
 #include "cccam3_ecm.h"
@@ -177,6 +178,9 @@ static void handle_request(int client_fd, const char *request) {
             "%s",
             response
         );
+    } else if (strcmp(path, "/web") == 0 || strcmp(path, "/web/") == 0) {
+        cccam_web_interface_serve(client_fd);
+        return;
     } else if (strcmp(path, "/stats") == 0 || strcmp(path, "/stats/all") == 0) {
         json_all_stats(response, sizeof(response));
         snprintf(response, sizeof(response),
@@ -224,7 +228,7 @@ static void handle_request(int client_fd, const char *request) {
             "Content-Type: text/plain\r\n"
             "\r\n"
             "Rota não encontrada: %s\n"
-            "Rotas disponíveis: /status, /stats, /stats/cache, /stats/ecm, /stats/readers",
+            "Rotas disponíveis: /status, /stats, /stats/cache, /stats/ecm, /stats/readers, /web",
             path
         );
     }
@@ -268,6 +272,7 @@ static void *rest_api_thread_func(void *arg) {
     }
     
     cccam_log(LOG_INFO, "REST API: Servidor HTTP iniciado na porta %d", g_rest_api_port);
+    cccam_log(LOG_INFO, "REST API: Interface web disponível em http://localhost:%d/web", g_rest_api_port);
     g_rest_api_running = 1;
     
     while (g_rest_api_running) {
