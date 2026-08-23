@@ -37,29 +37,32 @@
 ## 🏗️ Arquitetura
 
 ```
-cccam3/
-+-- src/
-|   +-- core/
-|   |   +-- cccam3_server.c
-|   |   +-- cccam3_config.c
-|   |   +-- cccam3_client.c
-|   |   +-- cccam3_logger.c
-|   |   +-- cccam3_utils.c
-|   +-- network/
-|   |   +-- cccam3_protocol.c
-|   |   +-- cccam3_protocol.h
-|   |   +-- cccam3_handshake.c
-|   |   +-- cccam3_crypto.c
-|   +-- hardware/
-|       +-- cccam3_dvbapi.c
-|       +-- cccam3_stapi.c
-+-- include/
-|   +-- cccam3.h
-|   +-- cccam3_structs.h
-+-- conf/
-|   +-- cccam3.conf
-|   +-- cccam3.user
-+-- docs/
+CCcam-3.0.1-by-Sharillas/
+├── conf/
+│   ├── cccam3.conf
+│   └── cccam3.user
+├── include/
+│   ├── cccam3.h
+│   └── cccam3_structs.h
+├── src/
+│   ├── core/
+│   │   ├── cccam3_server.c
+│   │   ├── cccam3_config.c
+│   │   ├── cccam3_client.c
+│   │   ├── cccam3_logger.c
+│   │   └── cccam3_utils.c
+│   ├── network/
+│   │   ├── cccam3_protocol.c
+│   │   ├── cccam3_handshake.c
+│   │   └── cccam3_crypto.c
+│   ├── hardware/
+│   │   ├── cccam3_dvbapi.c
+│   │   └── cccam3_stapi.c
+│   └── CCshare/                         # <-- NOVO NOME
+│       └── cccam3_cache.c
+├── Makefile
+├── README.md
+└── LICENSE
 ```
 
 ## 🔒 Segurança
