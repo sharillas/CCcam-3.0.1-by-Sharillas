@@ -2,9 +2,22 @@
 #define CCCAM3_H
 
 #include "cccam3_structs.h"
+#include "cccam3_cache.h"
+#include "cccam3_ecm.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <signal.h>
+#include <time.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 // --- Constantes Globais ---
-#define CCCAM3_VERSION "3.0.0"
+#define CCCAM3_VERSION "3.0.1"
 #define CCCAM3_DEFAULT_PORT 12000
 #define CCCAM3_MAX_CLIENTS 100
 #define CCCAM3_BUFFER_SIZE 4096
@@ -31,9 +44,21 @@
 #define CCCAM_CRYPT_MODE_3DES   0x10
 #define CCCAM_CRYPT_MODE_AES_GCM 0x11
 
+// --- Níveis de Log ---
+#define LOG_ERROR 0
+#define LOG_WARN  1
+#define LOG_INFO  2
+#define LOG_DEBUG 3
+#define LOG_TRACE 4
+
 // --- Funções Principais ---
 int cccam3_init(cccam_config_t *config);
 void cccam3_cleanup(void);
 int cccam3_run(void);
+
+// --- Funções de Configuração ---
+int cccam_load_config(const char *config_file, cccam_config_t *config);
+cccam_config_t *cccam_get_config(void);
+void cccam_print_config(cccam_config_t *config);
 
 #endif // CCCAM3_H
