@@ -8,7 +8,7 @@ SRC_DIR = src
 OBJ_DIR = obj
 BIN_DIR = bin
 
-# Lista completa de ficheiros fonte
+# Lista completa de ficheiros fonte com a nova estrutura
 SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/core/cccam3_config.c \
           $(SRC_DIR)/core/cccam3_client.c \
@@ -18,7 +18,8 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/network/cccam3_handshake.c \
           $(SRC_DIR)/network/cccam3_crypto.c \
           $(SRC_DIR)/hardware/cccam3_dvbapi.c \
-          $(SRC_DIR)/hardware/cccam3_stapi.c
+          $(SRC_DIR)/hardware/cccam3_stapi.c \
+          $(SRC_DIR)/CCshare/cccam3_cache.c
 
 OBJECTS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SOURCES))
 TARGET = $(BIN_DIR)/cccam3
