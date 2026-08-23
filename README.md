@@ -222,9 +222,9 @@ Este software é fornecido **apenas para fins educacionais e de estudo**. O uso 
 
 ## 📞 Suporte
 
-- **Issues**: [GitHub Issues](https://github.com/seuuser/cccam3/issues)
-- **Wiki**: [Documentação Completa](https://github.com/seuuser/cccam3/wiki)
-- **Discord**: [Servidor da Comunidade](https://discord.gg/cccam3)
+- **Issues**: [GitHub Issues]()
+- **Wiki**: [Documentação Completa]()
+- **Discord**: [Servidor da Comunidade]()
 
 ---
 
@@ -236,4 +236,4 @@ Este software é fornecido **apenas para fins educacionais e de estudo**. O uso 
 
 ---
 
-**CCcam3** - *O futuro da partilha de cartões*
+**CCcam 3.0.1** - *O futuro da partilha de cartões*
