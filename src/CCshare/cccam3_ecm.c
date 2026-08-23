@@ -3,6 +3,7 @@
 #include "cccam3_client.h"
 #include "cccam3_logger.h"
 #include "cccam3_protocol.h"
+#include "cccam3_card_manager.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -86,14 +87,15 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
     }
     g_ecm_cache_misses++;
 
-    // --- PASSO 2: Pedir ao Leitor ---
+    // --- PASSO 2: Pedir ao Card Manager ---
     uint8_t cw[CCCAM_CW_SIZE];
     uint8_t hop_reader;
+    uint32_t reader_id;
     
-    int reader_result = cccam_ecm_get_cw_from_reader(
+    int reader_result = cccam_card_manager_get_cw(
         request->caid, request->provid, request->sid,
         request->ecm_data, request->ecm_len,
-        cw, &hop_reader
+        cw, &hop_reader, &reader_id
     );
 
     if (reader_result == 0) {
@@ -108,7 +110,8 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
         cccam_cache_add(request->caid, request->provid, request->sid, 
                         cw, hop_reader, expires_at);
         
-        cccam_log(LOG_DEBUG, "CCshare: ECM %s - READER SUCCESS (hop %d)", info, hop_reader);
+        cccam_log(LOG_DEBUG, "CCshare: ECM %s - READER SUCCESS (hop %d, reader %u)", 
+                  info, hop_reader, reader_id);
         return 0;
     } else {
         // Falha ao obter CW do leitor
@@ -119,39 +122,19 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
     }
 }
 
-// --- Função para obter CW do leitor (será expandida na Prioridade 3) ---
+// --- Função para obter CW do leitor (agora usa o Card Manager) ---
 int cccam_ecm_get_cw_from_reader(uint16_t caid, uint16_t provid, uint16_t sid,
                                   const uint8_t *ecm_data, uint16_t ecm_len,
                                   uint8_t *cw, uint8_t *hop) {
     if (!cw || !hop) {
         return -1;
     }
-
-    // TODO: Implementar leitura real de cartão na Prioridade 3 (Card Manager)
-    // Por enquanto, simula uma resposta de leitor
     
-    cccam_log(LOG_DEBUG, "CCshare: A obter CW do leitor para CAID %04X SID %04X", caid, sid);
-    
-    // Simula uma CW de exemplo (apenas para teste)
-    // Em produção, isto viria de um leitor físico ou remoto
-    static uint8_t sample_cw[16] = {
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10
-    };
-    
-    // Simula sucesso/fracasso (80% sucesso para teste)
-    static int counter = 0;
-    counter++;
-    
-    if (counter % 5 == 0) {
-        // Simula falha a cada 5 pedidos
-        cccam_log(LOG_WARN, "CCshare: Leitor falhou (simulado) para CAID %04X", caid);
-        return -2; // Falha simulada
-    }
-    
-    memcpy(cw, sample_cw, CCCAM_CW_SIZE);
-    *hop = 1; // Hop 1 (servidor local)
-    return 0; // Sucesso
+    // Usa o Card Manager para obter a CW
+    uint32_t reader_id;
+    int result = cccam_card_manager_get_cw(caid, provid, sid, ecm_data, ecm_len, 
+                                            cw, hop, &reader_id);
+    return result;
 }
 
 // --- Função para enviar CW ao cliente ---
