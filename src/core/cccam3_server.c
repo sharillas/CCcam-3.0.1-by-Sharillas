@@ -11,6 +11,8 @@
 #include "cccam3_handshake_advanced.h"
 #include "cccam3_optimizer.h"
 #include "cccam3_protocol_newcamd.h"
+#include "cccam3_dvbapi.h"
+#include "cccam3_stapi.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,6 +82,17 @@ int cccam3_init(cccam_config_t *config) {
     if (cccam_optimizer_init() != 0) {
         cccam_log(LOG_ERROR, "Falha ao inicializar Optimizer");
         return -1;
+    }
+
+    // Inicializar DVB-API
+    if (cccam_dvbapi_init() != 0) {
+        cccam_log(LOG_WARN, "DVBAPI: Falha ao inicializar (continuando sem hardware)");
+        // Não retorna erro para não bloquear o servidor
+    }
+
+    // Inicializar STAPI (stub)
+    if (cccam_stapi_init() != 0) {
+        cccam_log(LOG_WARN, "STAPI: Falha ao inicializar (continuando sem hardware)");
     }
 
     // Inicializar API REST
@@ -185,6 +198,8 @@ void cccam3_cleanup(void) {
         close(g_server_fd);
         g_server_fd = -1;
     }
+    cccam_dvbapi_cleanup();
+    cccam_stapi_cleanup();
     cccam_optimizer_cleanup();
     cccam_handshake_advanced_cleanup();
     cccam_user_manager_cleanup();
