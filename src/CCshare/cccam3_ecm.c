@@ -69,4 +69,160 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
     memset(response, 0, sizeof(cccam_ecm_response_t));
     response->found = 0;
     response->caid = request->caid;
-   
+    response->provid = request->provid;
+    response->sid = request->sid;
+    response->hop = request->hop;
+    response->generated_at = time(NULL);
+
+    // --- PASSO 1: Verificar na Cache ---
+    uint8_t hop_out;
+    if (cccam_cache_find(request->caid, request->provid, request->sid, 
+                         response->cw, &hop_out) == 1) {
+        response->found = 1;
+        response->hop = hop_out;
+        g_ecm_cache_hits++;
+        cccam_log(LOG_DEBUG, "CCshare: ECM %s - CACHE HIT (hop %d)", info, hop_out);
+        return 0; // Sucesso, CW encontrada na cache
+    }
+    g_ecm_cache_misses++;
+
+    // --- PASSO 2: Pedir ao Leitor ---
+    uint8_t cw[CCCAM_CW_SIZE];
+    uint8_t hop_reader;
+    
+    int reader_result = cccam_ecm_get_cw_from_reader(
+        request->caid, request->provid, request->sid,
+        request->ecm_data, request->ecm_len,
+        cw, &hop_reader
+    );
+
+    if (reader_result == 0) {
+        // Sucesso! CW obtida do leitor
+        memcpy(response->cw, cw, CCCAM_CW_SIZE);
+        response->found = 1;
+        response->hop = hop_reader;
+        g_ecm_reader_success++;
+        
+        // Guarda na cache para futuras utilizações
+        time_t expires_at = time(NULL) + 60; // 60 segundos de validade
+        cccam_cache_add(request->caid, request->provid, request->sid, 
+                        cw, hop_reader, expires_at);
+        
+        cccam_log(LOG_DEBUG, "CCshare: ECM %s - READER SUCCESS (hop %d)", info, hop_reader);
+        return 0;
+    } else {
+        // Falha ao obter CW do leitor
+        g_ecm_reader_fail++;
+        response->found = 0;
+        cccam_log(LOG_WARN, "CCshare: ECM %s - READER FAIL (código %d)", info, reader_result);
+        return -1; // Falha
+    }
+}
+
+// --- Função para obter CW do leitor (será expandida na Prioridade 3) ---
+int cccam_ecm_get_cw_from_reader(uint16_t caid, uint16_t provid, uint16_t sid,
+                                  const uint8_t *ecm_data, uint16_t ecm_len,
+                                  uint8_t *cw, uint8_t *hop) {
+    if (!cw || !hop) {
+        return -1;
+    }
+
+    // TODO: Implementar leitura real de cartão na Prioridade 3 (Card Manager)
+    // Por enquanto, simula uma resposta de leitor
+    
+    cccam_log(LOG_DEBUG, "CCshare: A obter CW do leitor para CAID %04X SID %04X", caid, sid);
+    
+    // Simula uma CW de exemplo (apenas para teste)
+    // Em produção, isto viria de um leitor físico ou remoto
+    static uint8_t sample_cw[16] = {
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10
+    };
+    
+    // Simula sucesso/fracasso (80% sucesso para teste)
+    static int counter = 0;
+    counter++;
+    
+    if (counter % 5 == 0) {
+        // Simula falha a cada 5 pedidos
+        cccam_log(LOG_WARN, "CCshare: Leitor falhou (simulado) para CAID %04X", caid);
+        return -2; // Falha simulada
+    }
+    
+    memcpy(cw, sample_cw, CCCAM_CW_SIZE);
+    *hop = 1; // Hop 1 (servidor local)
+    return 0; // Sucesso
+}
+
+// --- Função para enviar CW ao cliente ---
+int cccam_ecm_send_cw(int client_fd, const cccam_ecm_response_t *response) {
+    if (!response || client_fd < 0) {
+        cccam_log(LOG_ERROR, "CCshare: send_cw - parâmetros inválidos");
+        return -1;
+    }
+
+    if (!response->found) {
+        cccam_log(LOG_WARN, "CCshare: Tentativa de enviar CW não encontrada para CAID %04X", 
+                  response->caid);
+        return -1;
+    }
+
+    // Constrói a mensagem CW
+    uint8_t buffer[1024];
+    size_t buf_len = sizeof(buffer);
+    
+    cccam_cw_msg_t cw_msg;
+    cw_msg.ecm_time = (uint32_t)response->generated_at;
+    memcpy(cw_msg.cw, response->cw, 16);
+    cw_msg.hop = response->hop;
+    cw_msg.caid = response->caid;
+    cw_msg.provid = response->provid;
+    cw_msg.sid = response->sid;
+    
+    if (cccam_protocol_build_cw(buffer, &buf_len, &cw_msg) != 0) {
+        cccam_log(LOG_ERROR, "CCshare: Falha ao construir mensagem CW para CAID %04X", 
+                  response->caid);
+        return -1;
+    }
+    
+    // Envia para o cliente
+    ssize_t sent = write(client_fd, buffer, buf_len);
+    if (sent != (ssize_t)buf_len) {
+        cccam_log(LOG_ERROR, "CCshare: Falha ao enviar CW para cliente (enviado %zd de %zu)", 
+                  sent, buf_len);
+        return -1;
+    }
+    
+    char cw_hex[33];
+    for (int i = 0; i < 16; i++) {
+        sprintf(cw_hex + (i * 2), "%02x", response->cw[i]);
+    }
+    cccam_log(LOG_DEBUG, "CCshare: CW enviada para CAID %04X SID %04X: %s (hop %d)", 
+              response->caid, response->sid, cw_hex, response->hop);
+    
+    return 0;
+}
+
+// --- Estatísticas ---
+void cccam_ecm_get_stats(int *total_requests, int *cache_hits, int *cache_misses, 
+                         int *reader_success, int *reader_fail) {
+    if (total_requests) *total_requests = g_ecm_total_requests;
+    if (cache_hits) *cache_hits = g_ecm_cache_hits;
+    if (cache_misses) *cache_misses = g_ecm_cache_misses;
+    if (reader_success) *reader_success = g_ecm_reader_success;
+    if (reader_fail) *reader_fail = g_ecm_reader_fail;
+}
+
+void cccam_ecm_debug_print(void) {
+    cccam_log(LOG_INFO, "=== CCshare: Estatísticas ECM ===");
+    cccam_log(LOG_INFO, "Total pedidos: %d", g_ecm_total_requests);
+    cccam_log(LOG_INFO, "Cache Hits: %d (%.1f%%)", g_ecm_cache_hits,
+              g_ecm_total_requests > 0 ? 
+              (float)g_ecm_cache_hits / g_ecm_total_requests * 100 : 0);
+    cccam_log(LOG_INFO, "Cache Misses: %d (%.1f%%)", g_ecm_cache_misses,
+              g_ecm_total_requests > 0 ? 
+              (float)g_ecm_cache_misses / g_ecm_total_requests * 100 : 0);
+    cccam_log(LOG_INFO, "Leitor Sucesso: %d", g_ecm_reader_success);
+    cccam_log(LOG_INFO, "Leitor Falhas: %d", g_ecm_reader_fail);
+    cccam_log(LOG_INFO, "=================================");
+}
