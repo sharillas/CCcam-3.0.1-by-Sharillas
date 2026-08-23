@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # --- Configuração ---
-REPO_URL="https://github.com/seuuser/cccam3.git"  # <-- ALTERAR PARA O SEU REPO
+REPO_URL="https://github.com/sharillas/CCcam-3.0.1-by-Sharillas.git"  # <-- ALTERAR PARA O SEU REPO
 BRANCH="${1:-main}"
 PROJECT_DIR="cccam3"
 BUILD_SCRIPT="scripts/build_release.sh"
