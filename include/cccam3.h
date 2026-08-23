@@ -9,6 +9,7 @@
 #include "cccam3_rest_api.h"
 #include "cccam3_web_interface.h"
 #include "cccam3_user_manager.h"
+#include "cccam3_crypto_advanced.h"
 
 #include <stdio.h>
 #include <stdlib.h>
