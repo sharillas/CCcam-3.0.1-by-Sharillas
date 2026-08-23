@@ -8,6 +8,7 @@
 #include "cccam3_hop_control.h"
 #include "cccam3_rest_api.h"
 #include "cccam3_user_manager.h"
+#include "cccam3_handshake_advanced.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,6 +70,11 @@ int cccam3_init(cccam_config_t *config) {
         return -1;
     }
 
+    if (cccam_handshake_advanced_init() != 0) {
+        cccam_log(LOG_ERROR, "Falha ao inicializar Handshake Avançado");
+        return -1;
+    }
+
     // Inicializar API REST
     if (cccam_rest_api_init(REST_API_DEFAULT_PORT) != 0) {
         cccam_log(LOG_WARN, "Falha ao iniciar API REST (porta %d)", REST_API_DEFAULT_PORT);
@@ -111,6 +117,7 @@ int cccam3_init(cccam_config_t *config) {
 
     cccam_log(LOG_INFO, "CCcam3 servidor iniciado na porta %d (max clientes: %d)", 
               g_config.listen_port, g_config.max_clients);
+    cccam_log(LOG_INFO, "Handshake avançado: RSA 2048 bits + AES-GCM");
     return 0;
 }
 
@@ -183,6 +190,7 @@ void cccam3_cleanup(void) {
         close(g_server_fd);
         g_server_fd = -1;
     }
+    cccam_handshake_advanced_cleanup();
     cccam_user_manager_cleanup();
     cccam_rest_api_cleanup();
     cccam_hop_control_cleanup();
