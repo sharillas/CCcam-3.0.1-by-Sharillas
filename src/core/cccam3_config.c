@@ -126,8 +126,24 @@ int cccam_load_config(const char *config_file, cccam_config_t *config) {
                 value = trim(colon + 1);
                 if (strcmp(key, "port") == 0) {
                     // A porta será usada no cccam3_init
-                    // Armazenar numa variável global se necessário
                 } else if (strcmp(key, "enabled") == 0) {
+                    // Será verificado no cccam3_init
+                }
+            }
+            continue;
+        }
+        
+        // Parsing da secção [web_interface]
+        if (strcmp(current_section, "web_interface") == 0) {
+            char *key, *value;
+            char *colon = strchr(p, '=');
+            if (colon) {
+                *colon = '\0';
+                key = trim(p);
+                value = trim(colon + 1);
+                if (strcmp(key, "enabled") == 0) {
+                    // Será verificado no cccam3_init
+                } else if (strcmp(key, "path") == 0) {
                     // Será verificado no cccam3_init
                 }
             }
@@ -163,4 +179,5 @@ void cccam_print_config(cccam_config_t *config) {
     cccam_log(LOG_INFO, "API REST: %s (porta %d)", 
               cccam_rest_api_is_running() ? "ativa" : "inativa", 
               cccam_rest_api_get_port());
+    cccam_log(LOG_INFO, "Interface Web: %s", cccam_rest_api_is_running() ? "ativa" : "inativa");
 }
