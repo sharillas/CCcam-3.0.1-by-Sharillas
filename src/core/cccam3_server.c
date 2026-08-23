@@ -9,6 +9,8 @@
 #include "cccam3_rest_api.h"
 #include "cccam3_user_manager.h"
 #include "cccam3_handshake_advanced.h"
+#include "cccam3_optimizer.h"
+#include "cccam3_protocol_newcamd.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,6 +77,11 @@ int cccam3_init(cccam_config_t *config) {
         return -1;
     }
 
+    if (cccam_optimizer_init() != 0) {
+        cccam_log(LOG_ERROR, "Falha ao inicializar Optimizer");
+        return -1;
+    }
+
     // Inicializar API REST
     if (cccam_rest_api_init(REST_API_DEFAULT_PORT) != 0) {
         cccam_log(LOG_WARN, "Falha ao iniciar API REST (porta %d)", REST_API_DEFAULT_PORT);
@@ -137,11 +144,7 @@ int cccam3_run(void) {
         FD_ZERO(&read_fds);
         FD_SET(g_server_fd, &read_fds);
 
-        // TODO: Adicionar sockets de clientes ao set
-        // FD_SET(client->socket_fd, &read_fds);
-        // if (client->socket_fd > max_fd) max_fd = client->socket_fd;
-
-        struct timeval tv = {1, 0}; // Timeout de 1 segundo
+        struct timeval tv = {1, 0};
         int activity = select(max_fd + 1, &read_fds, NULL, NULL, &tv);
 
         if (activity < 0) {
@@ -151,7 +154,6 @@ int cccam3_run(void) {
             break;
         }
 
-        // Verificar novas ligações
         if (FD_ISSET(g_server_fd, &read_fds)) {
             struct sockaddr_in client_addr;
             socklen_t addr_len = sizeof(client_addr);
@@ -164,21 +166,14 @@ int cccam3_run(void) {
 
             cccam_log(LOG_INFO, "Nova ligação de %s:%d", 
                       inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-            
-            // TODO: Criar cliente e adicionar à lista
-            // cccam_client_t *new_client = cccam_client_create(client_fd, &client_addr);
-            // add_client_to_list(new_client);
         }
 
-        // Limpar entradas expiradas da cache periodicamente
         static time_t last_cache_clean = 0;
         time_t now = time(NULL);
-        if (now - last_cache_clean > 30) { // A cada 30 segundos
+        if (now - last_cache_clean > 30) {
             cccam_cache_clean_expired();
             last_cache_clean = now;
         }
-
-        // TODO: Processar dados dos clientes
     }
 
     return 0;
@@ -190,6 +185,7 @@ void cccam3_cleanup(void) {
         close(g_server_fd);
         g_server_fd = -1;
     }
+    cccam_optimizer_cleanup();
     cccam_handshake_advanced_cleanup();
     cccam_user_manager_cleanup();
     cccam_rest_api_cleanup();
@@ -206,7 +202,6 @@ int main(int argc, char *argv[]) {
     char *config_file = "conf/cccam3.conf";
     int opt;
 
-    // Processar argumentos da linha de comando
     while ((opt = getopt(argc, argv, "c:hv")) != -1) {
         switch (opt) {
             case 'c':
@@ -228,29 +223,21 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Carregar configuração
     cccam_config_t config;
     if (cccam_load_config(config_file, &config) != 0) {
         fprintf(stderr, "Falha ao carregar configuração de %s\n", config_file);
         return 1;
     }
 
-    // Inicializar logger
     cccam_log_init(config.log_file, config.log_level);
-
-    // Mostrar configuração
     cccam_print_config(&config);
 
-    // Inicializar servidor
     if (cccam3_init(&config) != 0) {
         cccam_log(LOG_ERROR, "Falha ao inicializar servidor");
         return 1;
     }
 
-    // Executar servidor
     int result = cccam3_run();
-
-    // Limpeza
     cccam3_cleanup();
     cccam_log_close();
 
