@@ -67,7 +67,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ${{ matrix.packages }}
+          sudo apt-get install -y build-essential file ${{ matrix.packages }}
 
       - name: Cache OpenSSL
         id: cache-ssl
@@ -91,12 +91,16 @@ jobs:
       - name: Build CCcam3
         run: |
           make clean
-          make CC=${{ matrix.cc }} CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -I$OPENSSL_PREFIX/include ${{ matrix.cflags }}" LDFLAGS="-L$OPENSSL_PREFIX/lib -Wl,-Bstatic -lssl -lcrypto -Wl,-Bdynamic -lm -lpthread"
-          cp bin/cccam3 cccam3-${{ matrix.name }}
-          ls -la cccam3-${{ matrix.name }}
+          make CC=${{ matrix.cc }} CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -I$OPENSSL_PREFIX/include ${{ matrix.cflags }} -no-pie" LDFLAGS="-L$OPENSSL_PREFIX/lib -static -lssl -lcrypto -lm -lpthread"
+          file bin/cccam3
+          mkdir -p pkg-${{ matrix.name }}
+          cp bin/cccam3 pkg-${{ matrix.name }}/cccam3
+          chmod +x pkg-${{ matrix.name }}/cccam3
+          tar czf CCcam3-${{ matrix.name }}.tar.gz -C pkg-${{ matrix.name }} cccam3
+          ls -la CCcam3-${{ matrix.name }}.tar.gz
 
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "$RELEASE_TAG" cccam3-${{ matrix.name }} --clobber
+          gh release upload "$RELEASE_TAG" CCcam3-${{ matrix.name }}.tar.gz --clobber
