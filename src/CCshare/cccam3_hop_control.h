@@ -11,7 +11,7 @@
 #define CCCAM_HOP_TIMEOUT 60  // segundos
 
 // --- Estruturas ---
-typedef struct {
+typedef struct cccam_hop_entry {
     uint16_t caid;
     uint16_t provid;
     uint16_t sid;
@@ -19,6 +19,7 @@ typedef struct {
     time_t timestamp;         // Momento do pedido
     uint32_t client_id;       // Cliente que fez o pedido
     uint8_t blocked;          // 1 = bloqueado, 0 = permitido
+    struct cccam_hop_entry *next;
 } cccam_hop_entry_t;
 
 // --- Funções ---
