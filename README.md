@@ -118,57 +118,42 @@ cccam3/
 
 ### Plataformas Suportadas
 
-| Plataforma | Arquitetura | Estado |
-|:---|:---|:---:|
-| Linux (x86_64) | x86_64 | ✅ Testado |
-| Linux (ARM) | ARMv7/ARMv8 | 🚧 Em teste |
-| Linux (MIPS) | MIPS32 | 🚧 Em teste |
-| OpenWRT | MIPS/ARM | 🚧 Em teste |
+| Binário | Arquitetura | Boxes / Servidores compatíveis |
+|:---|:---|:---|
+| `cccam3-x86_64` | Linux 64 bits | VPS/servidores dedicados (Ubuntu, Debian, CentOS...), PCs, NAS x86_64 |
+| `cccam3-x86_32` | Linux 32 bits | VPS/servidores 32 bits antigos |
+| `cccam3-armv7` | ARM 32 bits | Raspberry Pi 2/3, boxes DVB ARM 32 bits (Dreambox One/Two, Amiko, Mutant...) |
+| `cccam3-aarch64` | ARM 64 bits | Raspberry Pi 4/5, boxes ARM64, servidores ARM64 |
+| `cccam3-mipsel` | MIPS 32 LE | Vu+ Duo/Solo/Solo2, Dreambox DM500HD/DM7020HD/DM8000, Gigablue, Zgemma MIPS |
+| `cccam3-mips64el` | MIPS 64 LE | Boxes DVB MIPS64 |
 
 ---
 
-## 🚀 Instalação Rápida
+## 🚀 Instalação Rápida (VPS ou Box)
 
-### 1. Clonar o Repositório
+### 1. Um comando (recomendado)
 
 ```bash
-git clone https://github.com/seuuser/cccam3.git
-cd cccam3
+curl -fsSL https://raw.githubusercontent.com/sharillas/CCcam-3.0.1-by-Sharillas/main/install.sh | bash
 ```
-2. Compilar
+
+O instalador deteta a arquitetura, descarrega o binário da release, instala as configurações em `/etc/cccam3/` (desativa o DVB automaticamente se não houver `/dev/dvb`) e instala o serviço. Depois:
 
 ```bash
+systemctl status cccam3        # estado do serviço
+tail -f /var/log/cccam3.log    # log
+cccam3 -c /etc/cccam3/cccam3.conf   # correr manualmente
+```
+
+> Ver `examples/` na repo para TODOS os ficheiros de configuração de exemplo, com todas as opções comentadas.
+
+### 2. Compilar manualmente
+
+```bash
+git clone https://github.com/sharillas/CCcam-3.0.1-by-Sharillas.git
+cd CCcam-3.0.1-by-Sharillas
 make clean
 make
-
-```
-3.Configurar
-Edite o ficheiro conf/cccam3.conf com as suas definições:
-
-
-```ini
-[global]
-port = 12000
-max_clients = 100
-
-[logging]
-level = 2
-
-[cache]
-enabled = 1
-timeout = 10
-
-[rest_api]
-port = 8080
-enabled = 1
-
-[newcamd]
-enabled = 1
-port = 34000
-```
-4. Executar
-
-```bash
 ./bin/cccam3 -c conf/cccam3.conf
 ```
 📚 Como Usar

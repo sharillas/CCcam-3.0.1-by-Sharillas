@@ -1,0 +1,49 @@
+# =====================================================================
+# CCcam3 - Exemplo do ficheiro de UTILIZADORES
+#
+# Localização em produção: /etc/cccam3/cccam3.users
+#
+# Formato:
+#   - Um bloco [username] por utilizador
+#   - A password é guardada em texto simples no ficheiro, mas o servidor
+#     converte-a para SHA256 ao carregar (nunca fica em claro na memória
+#     depois do arranque)
+#
+# Opções por utilizador:
+#   password  = password de acesso (obrigatória)
+#   level     = nível de acesso:
+#                 0 = Desativado (login bloqueado)
+#                 1 = User  (cliente normal)
+#                 2 = Admin
+#                 3 = Root
+#   max_hops  = limite de hops deste utilizador:
+#                 0 = sem limite (aceita o limite global de [hop_control])
+#                 1 - 20 = limite próprio
+#
+# IMPORTANTE: se o ficheiro não existir, o servidor cria o utilizador
+# admin/admin123 (nível root) por omissão - MUDA A PASSWORD!
+# =====================================================================
+
+# Utilizador administrador com acesso total
+[admin]
+password = admin123
+level = 3
+max_hops = 0
+
+# Cliente normal de exemplo (2 hops)
+[cliente1]
+password = 123456
+level = 1
+max_hops = 2
+
+# Cliente normal de exemplo (3 hops)
+[cliente2]
+password = senha123
+level = 1
+max_hops = 3
+
+# Utilizador desativado (login recusado enquanto level = 0)
+[teste]
+password = teste
+level = 0
+max_hops = 1

@@ -1,0 +1,22 @@
+# =====================================================================
+# CCcam3 - Exemplo de unidade systemd
+# Usada pelo instalador (install.sh). Para instalação manual:
+#   cp examples/cccam3.service /etc/systemd/system/cccam3.service
+#   systemctl daemon-reload
+#   systemctl enable --now cccam3
+# =====================================================================
+[Unit]
+Description=CCcam3 server
+After=network.target
+
+[Service]
+Type=simple
+# Ajusta o caminho do binário e da configuração se necessário
+ExecStart=/usr/local/bin/cccam3 -c /etc/cccam3/cccam3.conf
+Restart=always
+RestartSec=5
+# Reinicia também após crash/injeção de memória
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

@@ -17,6 +17,14 @@ static cccam_reader_t *g_readers = NULL;
 static int g_reader_count = 0;
 static uint32_t g_next_reader_id = 1;
 static int g_initialized = 0;
+static char g_readers_file[256] = "conf/cccam3.readers";
+
+void cccam_card_manager_set_config_file(const char *path) {
+    if (path && path[0] != '\0') {
+        strncpy(g_readers_file, path, sizeof(g_readers_file) - 1);
+        g_readers_file[sizeof(g_readers_file) - 1] = '\0';
+    }
+}
 
 // --- Funções Auxiliares Internas ---
 
@@ -283,7 +291,7 @@ int cccam_card_manager_init(void) {
     cccam_log(LOG_INFO, "CCshare: Card Manager inicializado");
     
     // Carregar leitores da configuração
-    cccam_card_manager_load_from_config("conf/cccam3.readers");
+    cccam_card_manager_load_from_config(g_readers_file);
     
     return 0;
 }

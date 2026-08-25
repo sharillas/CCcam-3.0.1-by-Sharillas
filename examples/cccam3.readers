@@ -1,0 +1,60 @@
+# =====================================================================
+# CCcam3 - Exemplo do ficheiro de LEITORES
+#
+# Localização em produção: /etc/cccam3/cccam3.readers
+#
+# Um leitor é a fonte de Control Words (CWs):
+#   - "local"  : leitor físico de smartcard (RESERVADO - simulado por agora,
+#                sem leitura direta de cartões)
+#   - "remote" : servidor CCcam remoto - ligação TCP REAL implementada:
+#                o CCcam3 faz login nesse servidor e pede-lhe as CWs
+#   - "emu"    : emulação SoftCam.Key (RESERVADO - simulado por agora)
+#
+# Opções comuns a todos os leitores:
+#   type     = local | remote | emu
+#   caid     = CAID suportado em HEXADECIMAL (0 = aceita todos os CAIDs)
+#   provid   = Provider ID em HEXADECIMAL (0 = aceita todos)
+#   hop      = número de saltos deste leitor (0 = cartão próprio)
+#   priority = prioridade (0 = mais alta; quanto maior, menos preferido)
+#   enabled  = 1 ativo | 0 inativo
+#
+# Opções apenas para type = remote:
+#   remote_host = IP/hostname do servidor remoto
+#   remote_port = porta CCcam do servidor remoto
+#   remote_user = utilizador no servidor remoto
+#   remote_pass = password no servidor remoto
+#
+# O servidor escolhe automaticamente o melhor leitor por canal
+# (score = prioridade + hop + tipo + estado).
+# =====================================================================
+
+# Leitor local de smartcard (reservado/simulado - sem leitura de cartão)
+[Local_Reader]
+type = local
+caid = 0100
+provid = 0000
+hop = 1
+priority = 0
+enabled = 1
+
+# Servidor CCcam remoto - é aqui que o CCcam3 vai buscar as CWs
+[Remote_Reader]
+type = remote
+caid = 0500
+provid = 0000
+hop = 2
+priority = 1
+enabled = 1
+remote_host = 127.0.0.1
+remote_port = 12000
+remote_user = user
+remote_pass = pass
+
+# Leitor de emulação SoftCam.Key (reservado/simulado)
+[EMU_Reader]
+type = emu
+caid = 0000
+provid = 0000
+hop = 0
+priority = 2
+enabled = 1

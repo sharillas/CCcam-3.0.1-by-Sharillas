@@ -35,6 +35,21 @@ static void cccam_signal_handler(int sig) {
     g_running = 0;
 }
 
+// Resolve caminhos de configuração com fallback para /etc/cccam3/
+static void server_resolve_path(const char *path, char *out, size_t out_size) {
+    if (path && path[0] == '/') {
+        snprintf(out, out_size, "%s", path);
+        return;
+    }
+    if (path && access(path, R_OK) == 0) {
+        snprintf(out, out_size, "%s", path);
+        return;
+    }
+    const char *base = path ? strrchr(path, '/') : NULL;
+    base = base ? base + 1 : (path ? path : "");
+    snprintf(out, out_size, "/etc/cccam3/%s", base);
+}
+
 // Inicialização do servidor
 int cccam3_init(cccam_config_t *config) {
     if (config) {
@@ -68,6 +83,18 @@ int cccam3_init(cccam_config_t *config) {
         return -1;
     }
 
+    // Resolver caminhos dos ficheiros de utilizadores e leitores
+    // (fallback para /etc/cccam3/ quando o cwd não tem os ficheiros)
+    char resolved_path[256];
+    server_resolve_path("conf/cccam3.readers", resolved_path, sizeof(resolved_path));
+    cccam_card_manager_set_config_file(resolved_path);
+    cccam_log(LOG_INFO, "Ficheiro de leitores: %s", resolved_path);
+
+    const char *user_file = g_config.user_file[0] != '\0' ? g_config.user_file : "conf/cccam3.users";
+    server_resolve_path(user_file, resolved_path, sizeof(resolved_path));
+    cccam_user_manager_set_config_file(resolved_path);
+    cccam_log(LOG_INFO, "Ficheiro de utilizadores: %s", resolved_path);
+
     if (cccam_card_manager_init() != 0) {
         cccam_log(LOG_ERROR, "Falha ao inicializar Card Manager");
         return -1;
@@ -80,9 +107,6 @@ int cccam3_init(cccam_config_t *config) {
     cccam_hop_control_set_limit((uint8_t)g_config.hop_limit);
     cccam_hop_control_set_timeout(g_config.hop_timeout);
 
-    if (g_config.user_file[0] != '\0') {
-        cccam_user_manager_set_config_file(g_config.user_file);
-    }
     if (g_config.user_manager_enabled) {
         if (cccam_user_manager_init() != 0) {
             cccam_log(LOG_ERROR, "Falha ao inicializar User Manager");
