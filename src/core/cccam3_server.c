@@ -233,7 +233,7 @@ static int recv_exact(int fd, uint8_t *buffer, size_t len) {
 }
 
 static int read_client_message(int fd, uint8_t *buffer, size_t buf_size, size_t *msg_len) {
-    uint8_t header[CCCAM_HEADER_SIZE];
+    uint8_t header[CCCAM3_HEADER_SIZE];
     if (recv_exact(fd, header, sizeof(header)) != 0) {
         return -1;
     }
@@ -242,7 +242,7 @@ static int read_client_message(int fd, uint8_t *buffer, size_t buf_size, size_t 
     memcpy(&len_net, header + 4, sizeof(len_net));
     uint32_t total = ntohl(len_net);
 
-    if (total < CCCAM_HEADER_SIZE || total > CCCAM3_BUFFER_SIZE || total > buf_size) {
+    if (total < CCCAM3_HEADER_SIZE || total > CCCAM3_BUFFER_SIZE || total > buf_size) {
         cccam_log(LOG_WARN, "Tamanho de mensagem inválido: %u", total);
         return -1;
     }
@@ -793,7 +793,7 @@ static int run_self_tests(void) {
         void *pl = NULL;
         size_t pl_len = 0;
         if (cccam_protocol_parse(buf, len, &hdr, &pl, &pl_len) != 0 ||
-            hdr.msg_id != CCCAM_MSG_LOGIN || pl_len != len - CCCAM_HEADER_SIZE) {
+            hdr.msg_id != CCCAM_MSG_LOGIN || pl_len != len - CCCAM3_HEADER_SIZE) {
             failures++;
             printf("TESTE FALHOU: parse login\n");
         }

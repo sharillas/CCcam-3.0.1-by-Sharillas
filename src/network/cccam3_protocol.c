@@ -78,7 +78,7 @@ void cccam_protocol_set_allowed_modes(uint32_t bitmask) {
 int cccam_protocol_parse(const uint8_t *buffer, size_t buf_len,
                          cccam_msg_header_t *header, void **payload,
                          size_t *payload_len) {
-    if (!buffer || !header || buf_len < CCCAM_HEADER_SIZE) {
+    if (!buffer || !header || buf_len < CCCAM3_HEADER_SIZE) {
         return -1;
     }
 
@@ -88,7 +88,7 @@ int cccam_protocol_parse(const uint8_t *buffer, size_t buf_len,
     header->crypt_mode = buffer[9];
     header->reserved = read_be16(buffer + 10);
 
-    if (header->msg_len < CCCAM_HEADER_SIZE) {
+    if (header->msg_len < CCCAM3_HEADER_SIZE) {
         cccam_log(LOG_ERROR, "Tamanho de mensagem inválido: %u", header->msg_len);
         return -1;
     }
@@ -98,7 +98,7 @@ int cccam_protocol_parse(const uint8_t *buffer, size_t buf_len,
         return -1;
     }
 
-    size_t payload_size = header->msg_len - CCCAM_HEADER_SIZE;
+    size_t payload_size = header->msg_len - CCCAM3_HEADER_SIZE;
     if (payload_size > 0) {
         if (!payload || !payload_len) {
             return -1;
@@ -107,7 +107,7 @@ int cccam_protocol_parse(const uint8_t *buffer, size_t buf_len,
         if (!*payload) {
             return -1;
         }
-        memcpy(*payload, buffer + CCCAM_HEADER_SIZE, payload_size);
+        memcpy(*payload, buffer + CCCAM3_HEADER_SIZE, payload_size);
 
         if (header->crypt_mode != CCCAM_CRYPT_MODE_NONE) {
             if (cccam_protocol_decrypt((uint8_t *)*payload, payload_size) != 0) {
@@ -140,7 +140,7 @@ int cccam_protocol_build_login(uint8_t *buffer, size_t *buf_len,
     if (user_len == 0 || pass_len == 0 || user_len > 63 || pass_len > 63) {
         return -1;
     }
-    size_t total_len = CCCAM_HEADER_SIZE + 16 + user_len + 1 + pass_len + 1 + 4;
+    size_t total_len = CCCAM3_HEADER_SIZE + 16 + user_len + 1 + pass_len + 1 + 4;
 
     if (*buf_len < total_len || total_len > CCCAM3_BUFFER_SIZE) {
         return -1;
@@ -175,7 +175,7 @@ int cccam_protocol_build_ecm(uint8_t *buffer, size_t *buf_len,
         return -1;
     }
 
-    size_t total_len = CCCAM_HEADER_SIZE + 6 + ecm_len;
+    size_t total_len = CCCAM3_HEADER_SIZE + 6 + ecm_len;
     if (*buf_len < total_len || total_len > CCCAM3_BUFFER_SIZE) {
         return -1;
     }
@@ -199,8 +199,8 @@ int cccam_protocol_build_ecm(uint8_t *buffer, size_t *buf_len,
     memcpy(ptr, ecm_data, ecm_len);
 
     if (g_crypt_mode != CCCAM_CRYPT_MODE_NONE) {
-        size_t payload_len = total_len - CCCAM_HEADER_SIZE;
-        if (cccam_protocol_encrypt(buffer + CCCAM_HEADER_SIZE, payload_len) != 0) {
+        size_t payload_len = total_len - CCCAM3_HEADER_SIZE;
+        if (cccam_protocol_encrypt(buffer + CCCAM3_HEADER_SIZE, payload_len) != 0) {
             return -1;
         }
     }
@@ -215,7 +215,7 @@ int cccam_protocol_build_cw(uint8_t *buffer, size_t *buf_len,
         return -1;
     }
 
-    size_t total_len = CCCAM_HEADER_SIZE + 4 + 16 + 1 + 6;
+    size_t total_len = CCCAM3_HEADER_SIZE + 4 + 16 + 1 + 6;
     if (*buf_len < total_len || total_len > CCCAM3_BUFFER_SIZE) {
         return -1;
     }
@@ -242,8 +242,8 @@ int cccam_protocol_build_cw(uint8_t *buffer, size_t *buf_len,
     write_be16(ptr, cw_msg->sid);
 
     if (g_crypt_mode != CCCAM_CRYPT_MODE_NONE) {
-        size_t payload_len = total_len - CCCAM_HEADER_SIZE;
-        if (cccam_protocol_encrypt(buffer + CCCAM_HEADER_SIZE, payload_len) != 0) {
+        size_t payload_len = total_len - CCCAM3_HEADER_SIZE;
+        if (cccam_protocol_encrypt(buffer + CCCAM3_HEADER_SIZE, payload_len) != 0) {
             return -1;
         }
     }
@@ -258,7 +258,7 @@ int cccam_protocol_build_login_ack(uint8_t *buffer, size_t *buf_len,
         return -1;
     }
 
-    size_t total_len = CCCAM_HEADER_SIZE + handshake_len;
+    size_t total_len = CCCAM3_HEADER_SIZE + handshake_len;
     if (*buf_len < total_len || total_len > CCCAM3_BUFFER_SIZE) {
         return -1;
     }

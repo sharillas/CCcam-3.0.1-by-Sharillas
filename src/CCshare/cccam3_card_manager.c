@@ -75,7 +75,7 @@ static int remote_recv_exact(int fd, uint8_t *buffer, size_t len) {
 static int remote_read_message(int fd, uint8_t *buffer, size_t buf_size,
                                cccam_msg_header_t *header, uint8_t **payload,
                                size_t *payload_len) {
-    uint8_t raw_header[CCCAM_HEADER_SIZE];
+    uint8_t raw_header[CCCAM3_HEADER_SIZE];
     if (remote_recv_exact(fd, raw_header, sizeof(raw_header)) != 0) {
         return -1;
     }
@@ -84,7 +84,7 @@ static int remote_read_message(int fd, uint8_t *buffer, size_t buf_size,
     memcpy(&len_net, raw_header + 4, sizeof(len_net));
     uint32_t total = ntohl(len_net);
 
-    if (total < CCCAM_HEADER_SIZE || total > buf_size) {
+    if (total < CCCAM3_HEADER_SIZE || total > buf_size) {
         return -1;
     }
 
