@@ -1,0 +1,102 @@
+name: Build release binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag da release onde anexar os binários'
+        required: false
+        default: 'v3.0.1'
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  OPENSSL_VERSION: 1.1.1w
+  OPENSSL_PREFIX: /tmp/ssl
+  RELEASE_TAG: ${{ github.event_name == 'release' && github.ref_name || github.event.inputs.release_tag }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x86_32
+            cc: gcc
+            cflags: -m32
+            openssl_target: linux-x86
+            openssl_extra: -m32
+            packages: gcc-multilib
+          - name: x86_64
+            cc: gcc
+            cflags: ""
+            openssl_target: linux-x86_64
+            openssl_extra: ""
+            packages: ""
+          - name: armv7
+            cc: arm-linux-gnueabihf-gcc
+            cflags: ""
+            openssl_target: linux-armv4
+            openssl_extra: ""
+            packages: gcc-arm-linux-gnueabihf
+          - name: aarch64
+            cc: aarch64-linux-gnu-gcc
+            cflags: ""
+            openssl_target: linux-aarch64
+            openssl_extra: ""
+            packages: gcc-aarch64-linux-gnu
+          - name: mipsel
+            cc: mipsel-linux-gnu-gcc
+            cflags: ""
+            openssl_target: linux-mips32
+            openssl_extra: -EL
+            packages: gcc-mipsel-linux-gnu
+          - name: mips64el
+            cc: mips64el-linux-gnuabi64-gcc
+            cflags: ""
+            openssl_target: linux-mips64
+            openssl_extra: -EL -mabi=64
+            packages: gcc-mips64el-linux-gnuabi64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ${{ matrix.packages }}
+
+      - name: Cache OpenSSL
+        id: cache-ssl
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ssl
+          key: openssl-${{ env.OPENSSL_VERSION }}-${{ matrix.name }}
+
+      - name: Build OpenSSL
+        if: steps.cache-ssl.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/openssl-build
+          cd /tmp/openssl-build
+          curl -sO https://www.openssl.org/source/openssl-${{ env.OPENSSL_VERSION }}.tar.gz
+          tar xzf openssl-${{ env.OPENSSL_VERSION }}.tar.gz
+          cd openssl-${{ env.OPENSSL_VERSION }}
+          ./Configure ${{ matrix.openssl_target }} no-shared ${{ matrix.openssl_extra }} --prefix=${{ env.OPENSSL_PREFIX }}
+          make -j4
+          make install_sw
+
+      - name: Build CCcam3
+        run: |
+          make clean
+          make CC=${{ matrix.cc }} CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -I$OPENSSL_PREFIX/include ${{ matrix.cflags }}" LDFLAGS="-L$OPENSSL_PREFIX/lib -Wl,-Bstatic -lssl -lcrypto -Wl,-Bdynamic -lm -lpthread"
+          cp bin/cccam3 cccam3-${{ matrix.name }}
+          ls -la cccam3-${{ matrix.name }}
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE_TAG" cccam3-${{ matrix.name }} --clobber
