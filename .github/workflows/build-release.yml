@@ -81,9 +81,9 @@ jobs:
         run: |
           mkdir -p /tmp/openssl-build
           cd /tmp/openssl-build
-          curl -sO https://www.openssl.org/source/openssl-${{ env.OPENSSL_VERSION }}.tar.gz
-          tar xzf openssl-${{ env.OPENSSL_VERSION }}.tar.gz
-          cd openssl-${{ env.OPENSSL_VERSION }}
+          curl -sfL -o openssl.tar.gz https://github.com/openssl/openssl/archive/refs/tags/OpenSSL_1_1_1w.tar.gz
+          tar xzf openssl.tar.gz
+          cd openssl-OpenSSL_1_1_1w
           ./Configure ${{ matrix.openssl_target }} no-shared ${{ matrix.openssl_extra }} --prefix=${{ env.OPENSSL_PREFIX }}
           make -j4
           make install_sw
