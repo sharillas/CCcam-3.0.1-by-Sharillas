@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 // --- Página HTML Principal ---
 static const char *WEB_PAGE_HTML =
@@ -148,15 +149,29 @@ static const char *WEB_PAGE_HTML =
 
 // --- Função para servir a página web ---
 void cccam_web_interface_serve(int client_fd) {
-    char response[8192];
-    snprintf(response, sizeof(response),
+    const char *header_fmt =
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: text/html; charset=utf-8\r\n"
         "Access-Control-Allow-Origin: *\r\n"
-        "\r\n"
-        "%s",
-        WEB_PAGE_HTML
-    );
+        "Content-Length: %zu\r\n"
+        "\r\n";
+
+    size_t body_len = strlen(WEB_PAGE_HTML);
+    int needed = snprintf(NULL, 0, header_fmt, body_len) + 1;
+    needed += (int)body_len;
+
+    char *response = malloc((size_t)needed);
+    if (!response) {
+        close(client_fd);
+        return;
+    }
+
+    int written = snprintf(response, (size_t)needed, header_fmt, body_len);
+    if (written > 0) {
+        memcpy(response + written, WEB_PAGE_HTML, body_len + 1);
+    }
+
     write(client_fd, response, strlen(response));
+    free(response);
     close(client_fd);
 }

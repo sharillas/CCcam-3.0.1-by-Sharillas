@@ -3,8 +3,9 @@
 #include <string.h>
 
 int cccam_protocol_handle_login(cccam_login_msg_t *login,
-                                uint8_t *response_handshake) {
-    if (!login || !response_handshake) {
+                                uint8_t *response_handshake,
+                                size_t response_size) {
+    if (!login || !response_handshake || response_size == 0) {
         cccam_log(LOG_ERROR, "CCshare: Handshake - parâmetros inválidos");
         return -1;
     }
@@ -28,10 +29,10 @@ int cccam_protocol_handle_login(cccam_login_msg_t *login,
 
     if (mode >= HANDSHAKE_MODE_RSA_AES) {
         cccam_log(LOG_DEBUG, "CCshare: Usando handshake RSA_AES");
-        return cccam_handshake_rsa_server(login, response_handshake);
+        return cccam_handshake_rsa_server(login, response_handshake, response_size);
     } else {
         cccam_log(LOG_DEBUG, "CCshare: Usando handshake LEGACY (SHA1+RC4)");
-        return cccam_handshake_legacy_server(login, response_handshake);
+        return cccam_handshake_legacy_server(login, response_handshake, response_size);
     }
 }
 

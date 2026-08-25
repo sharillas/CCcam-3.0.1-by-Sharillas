@@ -33,8 +33,8 @@ ssh ${VPS_USER}@${VPS_IP} << EOF
     cd ${VPS_PATH}
     tar -xzf cccam3_upload.tar.gz
     rm -f cccam3_upload.tar.gz
-    chmod +x scripts/build_release.sh
-    ./scripts/build_release.sh
+    chmod +x build_release.sh
+    ./build_release.sh
 EOF
 
 # Limpar

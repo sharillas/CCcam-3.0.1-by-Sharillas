@@ -20,6 +20,7 @@ typedef struct {
     time_t connected_at;
     int is_authenticated;
     int hop_count;
+    int is_newcamd;
     uint8_t node_id[8];
     struct sockaddr_in addr;
 } cccam_client_t;
@@ -102,6 +103,31 @@ typedef struct {
     int enable_logging;
     char log_file[256];
     int log_level;
+    int rest_api_enabled;
+    int rest_api_port;
+    int web_interface_enabled;
+    int newcamd_enabled;
+    int newcamd_port;
+    int dvbapi_enabled;
+    char dvbapi_socket[256];
+    int stapi_enabled;
+    int user_manager_enabled;
+    char user_file[256];
+    int hop_limit;
+    int hop_timeout;
+    uint32_t allowed_crypt_modes;
+    int dvb_enabled;
+    int dvb_adapter;
+    int dvb_frontend;
+    int dvb_demux;
+    int dvb_frequency_khz;
+    int dvb_symbol_rate;
+    int dvb_delivery_system;
+    int dvb_modulation;
+    int dvb_fec;
+    int dvb_inversion;
+    int dvb_polarity;
+    int dvb_service_id;
 } cccam_config_t;
 
 #endif // CCCAM3_STRUCTS_H

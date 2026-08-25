@@ -5,29 +5,37 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <openssl/sha.h>
 
 // --- Variáveis Globais ---
 static cccam_user_t *g_users = NULL;
 static int g_user_count = 0;
 static uint32_t g_next_user_id = 1;
 static int g_initialized = 0;
+static char g_users_file[256] = "conf/cccam3.users";
 
 // --- Funções Auxiliares ---
 
-// Hash simples para password (em produção, usar SHA256)
-static void simple_hash(const char *password, char *hash_out) {
-    // Simulação de hash - em produção usar OpenSSL SHA256
-    uint32_t hash = 0x811c9dc5;
-    while (*password) {
-        hash ^= (uint8_t)(*password++);
-        hash *= 0x01000193;
+// Hash SHA256 da password (representação hexadecimal)
+static void password_hash(const char *password, char *hash_out) {
+    uint8_t digest[SHA256_DIGEST_LENGTH];
+    SHA256((const unsigned char *)password, strlen(password), digest);
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(hash_out + (i * 2), "%02x", digest[i]);
     }
-    snprintf(hash_out, 64, "%08x%08x%08x%08x", hash, hash, hash, hash);
+    hash_out[SHA256_DIGEST_LENGTH * 2] = '\0';
 }
 
 // Gera um ID único
 static uint32_t generate_user_id(void) {
     return g_next_user_id++;
+}
+
+void cccam_user_manager_set_config_file(const char *path) {
+    if (path && path[0] != '\0') {
+        strncpy(g_users_file, path, sizeof(g_users_file) - 1);
+        g_users_file[sizeof(g_users_file) - 1] = '\0';
+    }
 }
 
 // --- Implementação das Funções ---
@@ -43,7 +51,7 @@ int cccam_user_manager_init(void) {
     cccam_log(LOG_INFO, "CCshare: User Manager inicializado");
     
     // Carregar utilizadores da configuração
-    cccam_user_manager_load_from_config("conf/cccam3.users");
+    cccam_user_manager_load_from_config(g_users_file);
     
     // Se não houver utilizadores, criar utilizador admin padrão
     if (g_user_count == 0) {
@@ -94,7 +102,7 @@ int cccam_user_manager_add_user(const char *username, const char *password,
     
     user->id = generate_user_id();
     strncpy(user->username, username, CCCAM_MAX_USERNAME - 1);
-    simple_hash(password, user->password_hash);
+    password_hash(password, user->password_hash);
     user->level = level;
     user->max_hops = max_hops;
     user->enabled = 1;
@@ -156,7 +164,7 @@ int cccam_user_manager_authenticate(const char *username, const char *password,
     }
     
     char hash[64];
-    simple_hash(password, hash);
+    password_hash(password, hash);
     
     if (strcmp(user->password_hash, hash) == 0) {
         user->last_login = time(NULL);

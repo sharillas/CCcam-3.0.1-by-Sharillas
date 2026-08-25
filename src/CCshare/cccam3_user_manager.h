@@ -73,6 +73,9 @@ void cccam_user_manager_register_ecm(const char *username, int success);
 // Carrega utilizadores de um ficheiro de configuração
 int cccam_user_manager_load_from_config(const char *config_file);
 
+// Define o caminho do ficheiro de utilizadores (usado no init)
+void cccam_user_manager_set_config_file(const char *path);
+
 // Obtém o número total de utilizadores
 int cccam_user_manager_get_count(void);
 

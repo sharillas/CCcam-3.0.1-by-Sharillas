@@ -5,6 +5,7 @@
 #include "cccam3_protocol.h"
 #include "cccam3_card_manager.h"
 #include "cccam3_hop_control.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>

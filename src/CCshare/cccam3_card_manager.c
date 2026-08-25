@@ -1,11 +1,16 @@
 #include "cccam3_card_manager.h"
 #include "cccam3_logger.h"
 #include "cccam3_protocol.h"
+#include "cccam3_utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <time.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 // --- Variáveis Globais ---
 static cccam_reader_t *g_readers = NULL;
@@ -54,43 +59,159 @@ static int reader_score(cccam_reader_t *reader, uint16_t caid, uint16_t provid) 
 
 // --- Funções para leitores remotos ---
 
-// Tenta ligar a um leitor remoto
-static int remote_connect(cccam_reader_t *reader) {
-    if (!reader || reader->type != READER_TYPE_REMOTE) return -1;
-    
-    // TODO: Implementar ligação real a servidor remoto
-    // Por enquanto, simula sucesso
-    cccam_log(LOG_DEBUG, "CCshare: Ligação remota a %s:%d (simulada)", 
-              reader->remote_host, reader->remote_port);
+static int remote_recv_exact(int fd, uint8_t *buffer, size_t len) {
+    size_t received = 0;
+    while (received < len) {
+        ssize_t n = recv(fd, buffer + received, len - received, 0);
+        if (n <= 0) {
+            return -1;
+        }
+        received += (size_t)n;
+    }
     return 0;
 }
 
-// Obtém CW de um leitor remoto
+// Lê uma mensagem CCcam completa do servidor remoto
+static int remote_read_message(int fd, uint8_t *buffer, size_t buf_size,
+                               cccam_msg_header_t *header, uint8_t **payload,
+                               size_t *payload_len) {
+    uint8_t raw_header[CCCAM_HEADER_SIZE];
+    if (remote_recv_exact(fd, raw_header, sizeof(raw_header)) != 0) {
+        return -1;
+    }
+
+    uint32_t len_net;
+    memcpy(&len_net, raw_header + 4, sizeof(len_net));
+    uint32_t total = ntohl(len_net);
+
+    if (total < CCCAM_HEADER_SIZE || total > buf_size) {
+        return -1;
+    }
+
+    memcpy(buffer, raw_header, sizeof(raw_header));
+    if (remote_recv_exact(fd, buffer + sizeof(raw_header),
+                          total - sizeof(raw_header)) != 0) {
+        return -1;
+    }
+
+    return cccam_protocol_parse(buffer, (size_t)total, header, payload, payload_len);
+}
+
+// Tenta ligar a um leitor remoto
+static int remote_connect(cccam_reader_t *reader) {
+    if (!reader || reader->type != READER_TYPE_REMOTE) return -1;
+
+    if (reader->remote_fd >= 0) {
+        close(reader->remote_fd);
+        reader->remote_fd = -1;
+    }
+
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        cccam_log(LOG_ERROR, "CCshare: Falha ao criar socket para %s", reader->name);
+        return -1;
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)reader->remote_port);
+    if (inet_pton(AF_INET, reader->remote_host, &addr.sin_addr) != 1) {
+        cccam_log(LOG_ERROR, "CCshare: Endereço remoto inválido: %s", reader->remote_host);
+        close(fd);
+        return -1;
+    }
+
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        cccam_log(LOG_WARN, "CCshare: Falha ao ligar a %s:%d (%s)",
+                  reader->remote_host, reader->remote_port, strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    struct timeval rcv_timeout = {10, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
+
+    reader->remote_fd = fd;
+    cccam_log(LOG_INFO, "CCshare: Ligado ao leitor remoto %s (%s:%d)",
+              reader->name, reader->remote_host, reader->remote_port);
+    return 0;
+}
+
+// Obtém CW de um leitor remoto usando o protocolo CCcam
 static int remote_get_cw(cccam_reader_t *reader, uint16_t caid, uint16_t provid, 
                           uint16_t sid, const uint8_t *ecm_data, uint16_t ecm_len,
                           uint8_t *cw, uint8_t *hop) {
     if (!reader || reader->type != READER_TYPE_REMOTE) return -1;
-    
-    // TODO: Implementar pedido a servidor remoto via protocolo CCcam/Newcamd
-    // Por enquanto, simula uma resposta
-    
-    // Simula sucesso/fracasso (70% sucesso para teste)
-    static int counter = 0;
-    counter++;
-    
-    if (counter % 3 == 0) {
-        cccam_log(LOG_WARN, "CCshare: Leitor remoto %s falhou (simulado)", reader->name);
+
+    // 1. Login no servidor remoto
+    uint8_t login_buf[CCCAM3_BUFFER_SIZE];
+    size_t login_len = sizeof(login_buf);
+    uint8_t handshake[16] = {0};
+    cccam_generate_seed(handshake, sizeof(handshake));
+
+    if (cccam_protocol_build_login(login_buf, &login_len,
+                                   reader->remote_user, reader->remote_pass,
+                                   301, handshake) != 0) {
         return -1;
     }
-    
-    // CW simulada
-    static uint8_t sample_cw[16] = {
-        0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-        0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20
-    };
-    memcpy(cw, sample_cw, CCCAM_CW_SIZE);
-    *hop = reader->hop + 1; // Incrementa hop para leitores remotos
-    
+
+    if (send(reader->remote_fd, login_buf, login_len, 0) != (ssize_t)login_len) {
+        cccam_log(LOG_WARN, "CCshare: Falha ao enviar login para %s", reader->name);
+        return -1;
+    }
+
+    // 2. Ler resposta de login (ACK)
+    uint8_t resp_buf[CCCAM3_BUFFER_SIZE];
+    cccam_msg_header_t header;
+    uint8_t *payload = NULL;
+    size_t payload_len = 0;
+
+    if (remote_read_message(reader->remote_fd, resp_buf, sizeof(resp_buf),
+                            &header, &payload, &payload_len) != 0) {
+        cccam_log(LOG_WARN, "CCshare: Falha ao ler ACK de %s", reader->name);
+        return -1;
+    }
+    free(payload);
+
+    if (header.msg_id != CCCAM_MSG_LOGIN_ACK) {
+        cccam_log(LOG_WARN, "CCshare: Resposta inesperada de %s (0x%02X)", reader->name, header.msg_id);
+        return -1;
+    }
+
+    // 3. Enviar pedido ECM
+    uint8_t ecm_buf[CCCAM3_BUFFER_SIZE];
+    size_t ecm_msg_len = sizeof(ecm_buf);
+    if (cccam_protocol_build_ecm(ecm_buf, &ecm_msg_len, caid, provid, sid,
+                                 ecm_data, ecm_len) != 0) {
+        return -1;
+    }
+
+    if (send(reader->remote_fd, ecm_buf, ecm_msg_len, 0) != (ssize_t)ecm_msg_len) {
+        cccam_log(LOG_WARN, "CCshare: Falha ao enviar ECM para %s", reader->name);
+        return -1;
+    }
+
+    // 4. Ler resposta CW
+    payload = NULL;
+    payload_len = 0;
+    if (remote_read_message(reader->remote_fd, resp_buf, sizeof(resp_buf),
+                            &header, &payload, &payload_len) != 0) {
+        cccam_log(LOG_WARN, "CCshare: Falha ao ler CW de %s", reader->name);
+        return -1;
+    }
+
+    if (header.msg_id != CCCAM_MSG_CW || payload_len < 4 + 16 + 1) {
+        cccam_log(LOG_WARN, "CCshare: Resposta de CW inválida de %s", reader->name);
+        free(payload);
+        return -1;
+    }
+
+    memcpy(cw, payload + 4, 16);
+    *hop = payload[4 + 16];
+    free(payload);
+
+    cccam_log(LOG_DEBUG, "CCshare: CW obtida do leitor remoto %s (hop %d)", reader->name, *hop);
     return 0;
 }
 
@@ -310,6 +431,13 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
                 }
             }
             result = remote_get_cw(reader, caid, provid, sid, ecm_data, ecm_len, cw, hop);
+            if (result != 0) {
+                // Fecha a ligação para tentar religar no próximo pedido
+                if (reader->remote_fd >= 0) {
+                    close(reader->remote_fd);
+                    reader->remote_fd = -1;
+                }
+            }
             break;
         case READER_TYPE_EMU:
             result = emu_get_cw(reader, caid, provid, sid, ecm_data, ecm_len, cw, hop);

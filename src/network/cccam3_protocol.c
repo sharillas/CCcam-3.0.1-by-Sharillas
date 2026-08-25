@@ -9,11 +9,55 @@
 static uint8_t g_crypt_mode = CCCAM_CRYPT_MODE_NONE;
 static uint8_t g_crypt_key[32];
 static size_t g_crypt_key_len = 0;
+static uint32_t g_allowed_crypt_modes = 0;
+
+static void write_be32(uint8_t *ptr, uint32_t val) {
+    uint32_t net = cccam_hton32(val);
+    memcpy(ptr, &net, 4);
+}
+
+static uint32_t read_be32(const uint8_t *ptr) {
+    uint32_t net;
+    memcpy(&net, ptr, 4);
+    return cccam_ntoh32(net);
+}
+
+static void write_be16(uint8_t *ptr, uint16_t val) {
+    uint16_t net = cccam_hton16(val);
+    memcpy(ptr, &net, 2);
+}
+
+static uint16_t read_be16(const uint8_t *ptr) {
+    uint16_t net;
+    memcpy(&net, ptr, 2);
+    return cccam_ntoh16(net);
+}
+
+static int crypt_mode_allowed(uint8_t mode) {
+    if (g_allowed_crypt_modes == 0) {
+        return 1;
+    }
+    switch (mode) {
+        case CCCAM_CRYPT_MODE_NONE:
+            return 1;
+        case CCCAM_CRYPT_MODE_RC4:
+            return (g_allowed_crypt_modes & 0x01) != 0;
+        case CCCAM_CRYPT_MODE_AES:
+            return (g_allowed_crypt_modes & 0x02) != 0;
+        case CCCAM_CRYPT_MODE_3DES:
+            return (g_allowed_crypt_modes & 0x04) != 0;
+        case CCCAM_CRYPT_MODE_AES_GCM:
+            return (g_allowed_crypt_modes & 0x10) != 0;
+        default:
+            return 0;
+    }
+}
 
 int cccam_protocol_init(void) {
     g_crypt_mode = CCCAM_CRYPT_MODE_NONE;
     memset(g_crypt_key, 0, sizeof(g_crypt_key));
     g_crypt_key_len = 0;
+    g_allowed_crypt_modes = 0;
     cccam_log(LOG_INFO, "Protocolo CCcam inicializado");
     return 0;
 }
@@ -22,6 +66,11 @@ void cccam_protocol_cleanup(void) {
     memset(g_crypt_key, 0, sizeof(g_crypt_key));
     g_crypt_key_len = 0;
     g_crypt_mode = CCCAM_CRYPT_MODE_NONE;
+    g_allowed_crypt_modes = 0;
+}
+
+void cccam_protocol_set_allowed_modes(uint32_t bitmask) {
+    g_allowed_crypt_modes = bitmask;
 }
 
 // --- Funções de Parsing ---
@@ -33,14 +82,16 @@ int cccam_protocol_parse(const uint8_t *buffer, size_t buf_len,
         return -1;
     }
 
-    const uint8_t *ptr = buffer;
-    header->msg_id = cccam_ntoh32(*(uint32_t *)ptr);
-    ptr += 4;
-    header->msg_len = cccam_ntoh32(*(uint32_t *)ptr);
-    ptr += 4;
-    header->flags = *ptr++;
-    header->crypt_mode = *ptr++;
-    header->reserved = cccam_ntoh16(*(uint16_t *)ptr);
+    header->msg_id = read_be32(buffer);
+    header->msg_len = read_be32(buffer + 4);
+    header->flags = buffer[8];
+    header->crypt_mode = buffer[9];
+    header->reserved = read_be16(buffer + 10);
+
+    if (header->msg_len < CCCAM_HEADER_SIZE) {
+        cccam_log(LOG_ERROR, "Tamanho de mensagem inválido: %u", header->msg_len);
+        return -1;
+    }
 
     if (header->msg_len > CCCAM3_BUFFER_SIZE || header->msg_len > buf_len) {
         cccam_log(LOG_ERROR, "Tamanho de mensagem inválido: %u", header->msg_len);
@@ -48,8 +99,10 @@ int cccam_protocol_parse(const uint8_t *buffer, size_t buf_len,
     }
 
     size_t payload_size = header->msg_len - CCCAM_HEADER_SIZE;
-    if (payload_size > 0 && payload && payload_len) {
-        *payload_len = payload_size;
+    if (payload_size > 0) {
+        if (!payload || !payload_len) {
+            return -1;
+        }
         *payload = malloc(payload_size);
         if (!*payload) {
             return -1;
@@ -60,12 +113,14 @@ int cccam_protocol_parse(const uint8_t *buffer, size_t buf_len,
             if (cccam_protocol_decrypt((uint8_t *)*payload, payload_size) != 0) {
                 free(*payload);
                 *payload = NULL;
+                *payload_len = 0;
                 return -1;
             }
         }
+        *payload_len = payload_size;
     } else {
-        *payload_len = 0;
-        *payload = NULL;
+        if (payload) *payload = NULL;
+        if (payload_len) *payload_len = 0;
     }
 
     return 0;
@@ -82,6 +137,9 @@ int cccam_protocol_build_login(uint8_t *buffer, size_t *buf_len,
 
     size_t user_len = strlen(username);
     size_t pass_len = strlen(password);
+    if (user_len == 0 || pass_len == 0 || user_len > 63 || pass_len > 63) {
+        return -1;
+    }
     size_t total_len = CCCAM_HEADER_SIZE + 16 + user_len + 1 + pass_len + 1 + 4;
 
     if (*buf_len < total_len || total_len > CCCAM3_BUFFER_SIZE) {
@@ -89,22 +147,22 @@ int cccam_protocol_build_login(uint8_t *buffer, size_t *buf_len,
     }
 
     uint8_t *ptr = buffer;
-    *(uint32_t *)ptr = cccam_hton32(CCCAM_MSG_LOGIN);
+    write_be32(ptr, CCCAM_MSG_LOGIN);
     ptr += 4;
-    *(uint32_t *)ptr = cccam_hton32(total_len);
+    write_be32(ptr, (uint32_t)total_len);
     ptr += 4;
     *ptr++ = 0;
     *ptr++ = CCCAM_CRYPT_MODE_NONE;
-    *(uint16_t *)ptr = 0;
+    write_be16(ptr, 0);
     ptr += 2;
 
     memcpy(ptr, handshake, 16);
     ptr += 16;
-    strcpy((char *)ptr, username);
+    memcpy(ptr, username, user_len + 1);
     ptr += user_len + 1;
-    strcpy((char *)ptr, password);
+    memcpy(ptr, password, pass_len + 1);
     ptr += pass_len + 1;
-    *(uint32_t *)ptr = cccam_hton32(version);
+    write_be32(ptr, version);
 
     *buf_len = total_len;
     return 0;
@@ -123,20 +181,20 @@ int cccam_protocol_build_ecm(uint8_t *buffer, size_t *buf_len,
     }
 
     uint8_t *ptr = buffer;
-    *(uint32_t *)ptr = cccam_hton32(CCCAM_MSG_ECM);
+    write_be32(ptr, CCCAM_MSG_ECM);
     ptr += 4;
-    *(uint32_t *)ptr = cccam_hton32(total_len);
+    write_be32(ptr, (uint32_t)total_len);
     ptr += 4;
     *ptr++ = 0;
     *ptr++ = (uint8_t)g_crypt_mode;
-    *(uint16_t *)ptr = 0;
+    write_be16(ptr, 0);
     ptr += 2;
 
-    *(uint16_t *)ptr = cccam_hton16(caid);
+    write_be16(ptr, caid);
     ptr += 2;
-    *(uint16_t *)ptr = cccam_hton16(provid);
+    write_be16(ptr, provid);
     ptr += 2;
-    *(uint16_t *)ptr = cccam_hton16(sid);
+    write_be16(ptr, sid);
     ptr += 2;
     memcpy(ptr, ecm_data, ecm_len);
 
@@ -163,25 +221,25 @@ int cccam_protocol_build_cw(uint8_t *buffer, size_t *buf_len,
     }
 
     uint8_t *ptr = buffer;
-    *(uint32_t *)ptr = cccam_hton32(CCCAM_MSG_CW);
+    write_be32(ptr, CCCAM_MSG_CW);
     ptr += 4;
-    *(uint32_t *)ptr = cccam_hton32(total_len);
+    write_be32(ptr, (uint32_t)total_len);
     ptr += 4;
     *ptr++ = 0;
     *ptr++ = (uint8_t)g_crypt_mode;
-    *(uint16_t *)ptr = 0;
+    write_be16(ptr, 0);
     ptr += 2;
 
-    *(uint32_t *)ptr = cccam_hton32(cw_msg->ecm_time);
+    write_be32(ptr, cw_msg->ecm_time);
     ptr += 4;
     memcpy(ptr, cw_msg->cw, 16);
     ptr += 16;
     *ptr++ = cw_msg->hop;
-    *(uint16_t *)ptr = cccam_hton16(cw_msg->caid);
+    write_be16(ptr, cw_msg->caid);
     ptr += 2;
-    *(uint16_t *)ptr = cccam_hton16(cw_msg->provid);
+    write_be16(ptr, cw_msg->provid);
     ptr += 2;
-    *(uint16_t *)ptr = cccam_hton16(cw_msg->sid);
+    write_be16(ptr, cw_msg->sid);
 
     if (g_crypt_mode != CCCAM_CRYPT_MODE_NONE) {
         size_t payload_len = total_len - CCCAM_HEADER_SIZE;
@@ -194,10 +252,41 @@ int cccam_protocol_build_cw(uint8_t *buffer, size_t *buf_len,
     return 0;
 }
 
+int cccam_protocol_build_login_ack(uint8_t *buffer, size_t *buf_len,
+                                   const uint8_t *handshake, size_t handshake_len) {
+    if (!buffer || !buf_len || !handshake || handshake_len == 0) {
+        return -1;
+    }
+
+    size_t total_len = CCCAM_HEADER_SIZE + handshake_len;
+    if (*buf_len < total_len || total_len > CCCAM3_BUFFER_SIZE) {
+        return -1;
+    }
+
+    uint8_t *ptr = buffer;
+    write_be32(ptr, CCCAM_MSG_LOGIN_ACK);
+    ptr += 4;
+    write_be32(ptr, (uint32_t)total_len);
+    ptr += 4;
+    *ptr++ = 0;
+    *ptr++ = (uint8_t)g_crypt_mode;
+    write_be16(ptr, 0);
+    ptr += 2;
+    memcpy(ptr, handshake, handshake_len);
+
+    *buf_len = total_len;
+    return 0;
+}
+
 // --- Funções de Encriptação ---
 
 int cccam_protocol_set_crypto(uint8_t crypt_mode, const uint8_t *key, size_t key_len) {
     if (!key || key_len > sizeof(g_crypt_key)) {
+        return -1;
+    }
+
+    if (!crypt_mode_allowed(crypt_mode)) {
+        cccam_log(LOG_WARN, "Modo de criptografia 0x%02X não permitido", crypt_mode);
         return -1;
     }
 

@@ -1,5 +1,6 @@
 #include "cccam3_cache.h"
 #include "cccam3_logger.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -26,6 +27,7 @@ static int g_cache_max_entries = CCCAM_CACHE_MAX_ENTRIES;
 static int g_cache_timeout = CCCAM_CACHE_DEFAULT_TIMEOUT;
 static int g_cache_hits = 0;
 static int g_cache_misses = 0;
+static int g_cache_enabled = 1;
 
 // --- Funções Auxiliares Internas ---
 
@@ -42,9 +44,15 @@ int cccam_cache_init(void) {
     g_cache_entries = 0;
     g_cache_hits = 0;
     g_cache_misses = 0;
+    g_cache_enabled = 1;
     cccam_log(LOG_INFO, "CCshare: Cache inicializada (máx: %d entradas, timeout: %d segundos)", 
               g_cache_max_entries, g_cache_timeout);
     return 0;
+}
+
+void cccam_cache_set_enabled(int enabled) {
+    g_cache_enabled = enabled ? 1 : 0;
+    cccam_log(LOG_INFO, "CCshare: Cache %s", g_cache_enabled ? "ativada" : "desativada");
 }
 
 void cccam_cache_cleanup(void) {
@@ -66,6 +74,10 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
     if (!cw) {
         cccam_log(LOG_ERROR, "CCshare: Tentativa de adicionar CW nula à cache");
         return -1;
+    }
+
+    if (!g_cache_enabled) {
+        return 0;
     }
 
     // Verifica se a cache já está cheia
@@ -127,6 +139,11 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
                      uint8_t *cw, uint8_t *hop) {
     if (!cw || !hop) {
         return -1;
+    }
+
+    if (!g_cache_enabled) {
+        g_cache_misses++;
+        return 0;
     }
 
     time_t now = time(NULL);

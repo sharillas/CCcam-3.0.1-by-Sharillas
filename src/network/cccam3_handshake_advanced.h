@@ -23,7 +23,7 @@ void cccam_handshake_advanced_cleanup(void);
 // --- Handshake RSA (novo modo) ---
 
 // Servidor: processa login com RSA
-int cccam_handshake_rsa_server(cccam_login_msg_t *login, uint8_t *response_handshake);
+int cccam_handshake_rsa_server(cccam_login_msg_t *login, uint8_t *response_handshake, size_t response_size);
 
 // Cliente: processa resposta do servidor RSA
 int cccam_handshake_rsa_client(cccam_login_msg_t *login, const uint8_t *server_handshake);
@@ -31,7 +31,7 @@ int cccam_handshake_rsa_client(cccam_login_msg_t *login, const uint8_t *server_h
 // --- Handshake Legado (compatibilidade) ---
 
 // Servidor: processa login com SHA1 (legado)
-int cccam_handshake_legacy_server(cccam_login_msg_t *login, uint8_t *response_handshake);
+int cccam_handshake_legacy_server(cccam_login_msg_t *login, uint8_t *response_handshake, size_t response_size);
 
 // Cliente: processa resposta do servidor SHA1 (legado)
 int cccam_handshake_legacy_client(cccam_login_msg_t *login, const uint8_t *server_handshake);
@@ -44,13 +44,19 @@ uint8_t cccam_handshake_negotiate_mode(uint8_t client_mode);
 // Obtém o modo de handshake atual
 uint8_t cccam_handshake_get_mode(void);
 
+// Obtém o tamanho da resposta de handshake para o modo atual
+size_t cccam_handshake_get_response_len(void);
+
+// Obtém a chave de sessão derivada no handshake
+int cccam_handshake_get_session_key(uint8_t *key, size_t *key_len);
+
 // --- Funções de Encriptação ---
 
 // Encripta dados usando o modo atual
-int cccam_handshake_encrypt(uint8_t *data, size_t len);
+int cccam_handshake_encrypt(uint8_t *data, size_t *len, size_t capacity);
 
 // Decripta dados usando o modo atual
-int cccam_handshake_decrypt(uint8_t *data, size_t len);
+int cccam_handshake_decrypt(uint8_t *data, size_t *len);
 
 // --- Assinatura de CWs ---
 

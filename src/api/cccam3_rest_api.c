@@ -1,3 +1,4 @@
+#include "cccam3.h"
 #include "cccam3_rest_api.h"
 #include "cccam3_web_interface.h"
 #include "cccam3_logger.h"
@@ -6,6 +7,7 @@
 #include "cccam3_card_manager.h"
 #include "cccam3_hop_control.h"
 #include "cccam3_client.h"
+#include "cccam3_dvb.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,73 +27,84 @@ static pthread_t g_rest_api_thread;
 
 // --- Funções Auxiliares ---
 
-// Converte bytes para hexadecimal
-static void bytes_to_hex(const uint8_t *bytes, size_t len, char *hex) {
-    for (size_t i = 0; i < len; i++) {
-        sprintf(hex + (i * 2), "%02x", bytes[i]);
-    }
-    hex[len * 2] = '\0';
+static void send_json_response(int client_fd, const char *json) {
+    char header[256];
+    snprintf(header, sizeof(header),
+             "HTTP/1.1 200 OK\r\n"
+             "Content-Type: application/json\r\n"
+             "Access-Control-Allow-Origin: *\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n",
+             strlen(json));
+    write(client_fd, header, strlen(header));
+    write(client_fd, json, strlen(json));
 }
 
-// Gera resposta JSON com estatísticas da cache
+static void send_not_found(int client_fd, const char *path) {
+    char response[512];
+    snprintf(response, sizeof(response),
+             "HTTP/1.1 404 Not Found\r\n"
+             "Content-Type: text/plain\r\n"
+             "\r\n"
+             "Rota não encontrada: %s\n"
+             "Rotas disponíveis: /status, /stats, /stats/cache, /stats/ecm, /stats/readers, /web",
+             path);
+    write(client_fd, response, strlen(response));
+}
+
+// Gera conteúdo JSON das estatísticas da cache
 static void json_cache_stats(char *buffer, size_t size) {
     int total, hits, misses;
     cccam_cache_get_stats(&total, &hits, &misses);
     
     snprintf(buffer, size,
-        "{\n"
-        "  \"cache\": {\n"
+        "\"cache\": {\n"
         "    \"entries\": %d,\n"
         "    \"hits\": %d,\n"
         "    \"misses\": %d,\n"
         "    \"hit_ratio\": %.2f\n"
-        "  }\n"
-        "}",
+        "  }",
         total, hits, misses,
         (hits + misses) > 0 ? (float)hits / (hits + misses) * 100 : 0
     );
 }
 
-// Gera resposta JSON com estatísticas ECM
+// Gera conteúdo JSON das estatísticas ECM
 static void json_ecm_stats(char *buffer, size_t size) {
     int total, cache_hits, cache_misses, reader_success, reader_fail;
     cccam_ecm_get_stats(&total, &cache_hits, &cache_misses, &reader_success, &reader_fail);
     
     snprintf(buffer, size,
-        "{\n"
-        "  \"ecm\": {\n"
+        "\"ecm\": {\n"
         "    \"total_requests\": %d,\n"
         "    \"cache_hits\": %d,\n"
         "    \"cache_misses\": %d,\n"
         "    \"reader_success\": %d,\n"
         "    \"reader_fail\": %d,\n"
         "    \"cache_hit_ratio\": %.2f\n"
-        "  }\n"
-        "}",
+        "  }",
         total, cache_hits, cache_misses, reader_success, reader_fail,
         total > 0 ? (float)cache_hits / total * 100 : 0
     );
 }
 
-// Gera resposta JSON com estatísticas dos leitores
+// Gera conteúdo JSON das estatísticas dos leitores
 static void json_reader_stats(char *buffer, size_t size) {
     int total, active, local, remote;
     cccam_card_manager_get_stats(&total, &active, &local, &remote);
     
     snprintf(buffer, size,
-        "{\n"
-        "  \"readers\": {\n"
+        "\"readers\": {\n"
         "    \"total\": %d,\n"
         "    \"active\": %d,\n"
         "    \"local\": %d,\n"
         "    \"remote\": %d\n"
-        "  }\n"
-        "}",
+        "  }",
         total, active, local, remote
     );
 }
 
-// Gera resposta JSON com estado do servidor
+// Gera conteúdo JSON do estado do servidor
 static void json_server_status(char *buffer, size_t size) {
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
@@ -100,24 +113,48 @@ static void json_server_status(char *buffer, size_t size) {
     
     int client_count = cccam_client_get_count();
     uint8_t hop_limit = cccam_hop_control_get_limit();
+    cccam_config_t *config = cccam_get_config();
     
     snprintf(buffer, size,
-        "{\n"
-        "  \"server\": {\n"
-        "    \"name\": \"CCcam3\",\n"
+        "\"server\": {\n"
+        "    \"name\": \"%s\",\n"
         "    \"version\": \"%s\",\n"
         "    \"status\": \"online\",\n"
         "    \"uptime\": \"%s\",\n"
         "    \"clients\": %d,\n"
         "    \"hop_limit\": %d,\n"
-        "    \"port\": %d\n"
-        "  }\n"
-        "}",
-        CCCAM3_VERSION, time_str, client_count, hop_limit, g_rest_api_port
+        "    \"port\": %d,\n"
+        "    \"rest_port\": %d\n"
+        "  }",
+        config->server_name, CCCAM3_VERSION, time_str, client_count, hop_limit,
+        config->listen_port, g_rest_api_port
     );
 }
 
-// Gera resposta JSON com todas as estatísticas
+// Gera JSON com a lista de canais do transponder DVB
+static void json_channels(char *buffer, size_t size) {
+    cccam_dvb_channel_t channels[CCCAM3_DVB_MAX_CHANNELS];
+    int count = cccam_dvb_get_channels(channels, CCCAM3_DVB_MAX_CHANNELS);
+    if (count > 64) count = 64;
+
+    size_t used = 0;
+    used += (size_t)snprintf(buffer + used, size - used,
+        "\"channels\": {\n"
+        "    \"count\": %d,\n"
+        "    \"services\": [\n", count);
+
+    for (int i = 0; i < count && used + 128 < size; i++) {
+        used += (size_t)snprintf(buffer + used, size - used,
+            "%s      { \"sid\": %u, \"caid\": %u, \"ecm_pid\": %u, \"pmt_pid\": %u, \"video_pid\": %u, \"name\": \"%s\" }",
+            i > 0 ? ",\n" : "",
+            channels[i].sid, channels[i].caid, channels[i].ecm_pid,
+            channels[i].pmt_pid, channels[i].video_pid, channels[i].name);
+    }
+
+    snprintf(buffer + used, size - used, "\n    ]\n  }");
+}
+
+// Gera JSON completo com todas as estatísticas
 static void json_all_stats(char *buffer, size_t size) {
     char cache_buf[512], ecm_buf[512], reader_buf[512], status_buf[512];
     
@@ -134,18 +171,18 @@ static void json_all_stats(char *buffer, size_t size) {
         "  %s,\n"
         "  %s\n"
         "}",
-        time(NULL),
-        status_buf + 1,  // Remove o primeiro '{'
-        cache_buf + 1,
-        ecm_buf + 1,
-        reader_buf + 1
+        (long)time(NULL),
+        status_buf,
+        cache_buf,
+        ecm_buf,
+        reader_buf
     );
 }
 
 // --- Handler de Requisições HTTP ---
 
 static void handle_request(int client_fd, const char *request) {
-    char response[8192];
+    char json[4096];
     char *path = NULL;
     
     // Parse do caminho da requisição
@@ -153,6 +190,7 @@ static void handle_request(int client_fd, const char *request) {
     if (!method_end) {
         const char *bad_request = "HTTP/1.1 400 Bad Request\r\n\r\n";
         write(client_fd, bad_request, strlen(bad_request));
+        close(client_fd);
         return;
     }
     
@@ -161,6 +199,7 @@ static void handle_request(int client_fd, const char *request) {
     if (!path_end) {
         const char *bad_request = "HTTP/1.1 400 Bad Request\r\n\r\n";
         write(client_fd, bad_request, strlen(bad_request));
+        close(client_fd);
         return;
     }
     
@@ -169,71 +208,30 @@ static void handle_request(int client_fd, const char *request) {
     
     // --- Rotas ---
     if (strcmp(path, "/") == 0 || strcmp(path, "/status") == 0) {
-        json_server_status(response, sizeof(response));
-        snprintf(response, sizeof(response),
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "\r\n"
-            "%s",
-            response
-        );
+        json_server_status(json, sizeof(json));
+        send_json_response(client_fd, json);
     } else if (strcmp(path, "/web") == 0 || strcmp(path, "/web/") == 0) {
         cccam_web_interface_serve(client_fd);
         return;
     } else if (strcmp(path, "/stats") == 0 || strcmp(path, "/stats/all") == 0) {
-        json_all_stats(response, sizeof(response));
-        snprintf(response, sizeof(response),
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "\r\n"
-            "%s",
-            response
-        );
+        json_all_stats(json, sizeof(json));
+        send_json_response(client_fd, json);
     } else if (strcmp(path, "/stats/cache") == 0) {
-        json_cache_stats(response, sizeof(response));
-        snprintf(response, sizeof(response),
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "\r\n"
-            "%s",
-            response
-        );
+        json_cache_stats(json, sizeof(json));
+        send_json_response(client_fd, json);
     } else if (strcmp(path, "/stats/ecm") == 0) {
-        json_ecm_stats(response, sizeof(response));
-        snprintf(response, sizeof(response),
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "\r\n"
-            "%s",
-            response
-        );
+        json_ecm_stats(json, sizeof(json));
+        send_json_response(client_fd, json);
     } else if (strcmp(path, "/stats/readers") == 0) {
-        json_reader_stats(response, sizeof(response));
-        snprintf(response, sizeof(response),
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "\r\n"
-            "%s",
-            response
-        );
+        json_reader_stats(json, sizeof(json));
+        send_json_response(client_fd, json);
+    } else if (strcmp(path, "/channels") == 0) {
+        json_channels(json, sizeof(json));
+        send_json_response(client_fd, json);
     } else {
-        // Rota não encontrada
-        snprintf(response, sizeof(response),
-            "HTTP/1.1 404 Not Found\r\n"
-            "Content-Type: text/plain\r\n"
-            "\r\n"
-            "Rota não encontrada: %s\n"
-            "Rotas disponíveis: /status, /stats, /stats/cache, /stats/ecm, /stats/readers, /web",
-            path
-        );
+        send_not_found(client_fd, path);
     }
     
-    write(client_fd, response, strlen(response));
     close(client_fd);
 }
 

@@ -1,7 +1,7 @@
 # Makefile para CCcam3
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -Iinclude -DUSE_OPENSSL
+CFLAGS = -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL
 LDFLAGS = -lssl -lcrypto -lm -lpthread
 
 SRC_DIR = src
@@ -23,6 +23,7 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/network/cccam3_protocol_newcamd.c \
           $(SRC_DIR)/hardware/cccam3_dvbapi.c \
           $(SRC_DIR)/hardware/cccam3_stapi.c \
+          $(SRC_DIR)/hardware/cccam3_dvb.c \
           $(SRC_DIR)/CCshare/cccam3_cache.c \
           $(SRC_DIR)/CCshare/cccam3_ecm.c \
           $(SRC_DIR)/CCshare/cccam3_card_manager.c \

@@ -27,6 +27,9 @@ typedef struct {
 // Inicializa a DVB-API
 int cccam_dvbapi_init(void);
 
+// Define o caminho do socket DVBAPI (antes do init)
+void cccam_dvbapi_set_socket_path(const char *path);
+
 // Limpa a DVB-API
 void cccam_dvbapi_cleanup(void);
 

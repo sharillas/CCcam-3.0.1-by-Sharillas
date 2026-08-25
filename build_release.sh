@@ -21,14 +21,14 @@ mkdir -p ${DOCS_DIR}
 
 # --- Compilação para x86_64 (nativo) ---
 echo "📦 A compilar para x86_64..."
-make CC=gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -DUSE_OPENSSL -m64"
+make CC=gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -m64"
 cp bin/cccam3 ${BIN_DIR}/cccam3-x86_64
 make clean
 
 # --- Compilação para ARMv7 ---
 echo "📦 A compilar para ARMv7..."
 if command -v arm-linux-gnueabihf-gcc &> /dev/null; then
-    make CC=arm-linux-gnueabihf-gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -DUSE_OPENSSL -march=armv7-a -mfpu=neon"
+    make CC=arm-linux-gnueabihf-gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -march=armv7-a -mfpu=neon"
     cp bin/cccam3 ${BIN_DIR}/cccam3-armv7
     make clean
 else
@@ -38,7 +38,7 @@ fi
 # --- Compilação para ARMv8 (aarch64) ---
 echo "📦 A compilar para ARMv8..."
 if command -v aarch64-linux-gnu-gcc &> /dev/null; then
-    make CC=aarch64-linux-gnu-gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -DUSE_OPENSSL -march=armv8-a"
+    make CC=aarch64-linux-gnu-gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -march=armv8-a"
     cp bin/cccam3 ${BIN_DIR}/cccam3-armv8
     make clean
 else
@@ -48,7 +48,7 @@ fi
 # --- Compilação para MIPS ---
 echo "📦 A compilar para MIPS..."
 if command -v mipsel-linux-gcc &> /dev/null; then
-    make CC=mipsel-linux-gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -DUSE_OPENSSL -march=mips32"
+    make CC=mipsel-linux-gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -march=mips32"
     cp bin/cccam3 ${BIN_DIR}/cccam3-mips
     make clean
 else

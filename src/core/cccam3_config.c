@@ -14,7 +14,30 @@ static cccam_config_t g_config = {
     .enable_cache = 1,
     .cache_timeout = 10,
     .enable_logging = 1,
-    .log_level = 2
+    .log_level = 2,
+    .rest_api_enabled = 1,
+    .rest_api_port = 8080,
+    .web_interface_enabled = 1,
+    .newcamd_enabled = 0,
+    .newcamd_port = 34000,
+    .dvbapi_enabled = 1,
+    .stapi_enabled = 0,
+    .user_manager_enabled = 1,
+    .hop_limit = 3,
+    .hop_timeout = 60,
+    .allowed_crypt_modes = 0,
+    .dvb_enabled = 0,
+    .dvb_adapter = 0,
+    .dvb_frontend = 0,
+    .dvb_demux = 0,
+    .dvb_frequency_khz = 0,
+    .dvb_symbol_rate = 27500000,
+    .dvb_delivery_system = 0,
+    .dvb_modulation = 0,
+    .dvb_fec = 0,
+    .dvb_inversion = 0,
+    .dvb_polarity = 0,
+    .dvb_service_id = 0
 };
 
 // Remove espaços e quebras de linha no início/fim
@@ -28,57 +51,166 @@ static char *trim(char *str) {
     return str;
 }
 
-// Parsing de uma linha de configuração
-static int parse_line(char *line, cccam_config_t *config) {
-    char *key, *value;
-    char *colon = strchr(line, '=');
-    if (!colon) return -1;
-    
-    *colon = '\0';
-    key = trim(line);
-    value = trim(colon + 1);
-    
-    if (strcmp(key, "port") == 0) {
-        config->listen_port = atoi(value);
-    } else if (strcmp(key, "server_name") == 0) {
-        strncpy(config->server_name, value, sizeof(config->server_name) - 1);
-    } else if (strcmp(key, "max_clients") == 0) {
-        config->max_clients = atoi(value);
-    } else if (strcmp(key, "cache_enabled") == 0) {
-        config->enable_cache = (strcmp(value, "1") == 0 || strcmp(value, "yes") == 0);
-    } else if (strcmp(key, "cache_timeout") == 0) {
-        config->cache_timeout = atoi(value);
-        cccam_cache_set_timeout(atoi(value));
-    } else if (strcmp(key, "log_level") == 0) {
-        config->log_level = atoi(value);
-    } else if (strcmp(key, "log_file") == 0) {
-        strncpy(config->log_file, value, sizeof(config->log_file) - 1);
-    } else if (strcmp(key, "max_hops") == 0) {
-        cccam_hop_control_set_limit((uint8_t)atoi(value));
+static int parse_bool(const char *value) {
+    return (strcmp(value, "1") == 0 || strcmp(value, "yes") == 0 || strcmp(value, "true") == 0);
+}
+
+// Parsing de uma linha de configuração (formato key = value)
+static void parse_key_value(char *line, cccam_config_t *config, const char *section) {
+    char *eq = strchr(line, '=');
+    if (!eq) return;
+
+    *eq = '\0';
+    char *key = trim(line);
+    char *value = trim(eq + 1);
+
+    if (strcmp(section, "global") == 0 || section[0] == '\0') {
+        if (strcmp(key, "port") == 0) {
+            config->listen_port = atoi(value);
+        } else if (strcmp(key, "server_name") == 0) {
+            strncpy(config->server_name, value, sizeof(config->server_name) - 1);
+        } else if (strcmp(key, "max_clients") == 0) {
+            config->max_clients = atoi(value);
+        }
+    } else if (strcmp(section, "logging") == 0) {
+        if (strcmp(key, "level") == 0 || strcmp(key, "log_level") == 0) {
+            config->log_level = atoi(value);
+        } else if (strcmp(key, "file") == 0 || strcmp(key, "log_file") == 0) {
+            strncpy(config->log_file, value, sizeof(config->log_file) - 1);
+        } else if (strcmp(key, "enabled") == 0) {
+            config->enable_logging = parse_bool(value);
+        }
+    } else if (strcmp(section, "cache") == 0) {
+        if (strcmp(key, "enabled") == 0 || strcmp(key, "cache_enabled") == 0) {
+            config->enable_cache = parse_bool(value);
+        } else if (strcmp(key, "timeout") == 0 || strcmp(key, "cache_timeout") == 0) {
+            config->cache_timeout = atoi(value);
+        }
+    } else if (strcmp(section, "security") == 0) {
+        if (strcmp(key, "allowed_crypt_modes") == 0) {
+            config->allowed_crypt_modes = (uint32_t)strtoul(value, NULL, 16);
+        }
+    } else if (strcmp(section, "hop_control") == 0) {
+        if (strcmp(key, "max_hops") == 0) {
+            config->hop_limit = atoi(value);
+        } else if (strcmp(key, "timeout") == 0) {
+            config->hop_timeout = atoi(value);
+        } else if (strcmp(key, "block_loops") == 0) {
+            // A deteção de loops por repetição foi removida (bloqueava pedidos legítimos)
+        }
+    } else if (strcmp(section, "rest_api") == 0) {
+        if (strcmp(key, "port") == 0) {
+            config->rest_api_port = atoi(value);
+        } else if (strcmp(key, "enabled") == 0) {
+            config->rest_api_enabled = parse_bool(value);
+        }
+    } else if (strcmp(section, "web_interface") == 0) {
+        if (strcmp(key, "enabled") == 0) {
+            config->web_interface_enabled = parse_bool(value);
+        } else if (strcmp(key, "path") == 0) {
+            // O caminho é fixo (/web) na API REST
+        }
+    } else if (strcmp(section, "user_manager") == 0) {
+        if (strcmp(key, "enabled") == 0) {
+            config->user_manager_enabled = parse_bool(value);
+        } else if (strcmp(key, "file") == 0) {
+            strncpy(config->user_file, value, sizeof(config->user_file) - 1);
+        } else if (strcmp(key, "auto_register") == 0) {
+            // Registro automático não suportado
+        }
+    } else if (strcmp(section, "newcamd") == 0) {
+        if (strcmp(key, "enabled") == 0) {
+            config->newcamd_enabled = parse_bool(value);
+        } else if (strcmp(key, "port") == 0) {
+            config->newcamd_port = atoi(value);
+        }
+    } else if (strcmp(section, "dvbapi") == 0) {
+        if (strcmp(key, "enabled") == 0) {
+            config->dvbapi_enabled = parse_bool(value);
+        } else if (strcmp(key, "socket") == 0) {
+            strncpy(config->dvbapi_socket, value, sizeof(config->dvbapi_socket) - 1);
+        } else if (strcmp(key, "max_demux") == 0) {
+            // DVBAPI_MAX_DEMUX é fixo em tempo de compilação
+        }
+    } else if (strcmp(section, "stapi") == 0) {
+        if (strcmp(key, "enabled") == 0) {
+            config->stapi_enabled = parse_bool(value);
+        } else if (strcmp(key, "device") == 0) {
+            // Dispositivo STAPI específico de hardware
+        }
+    } else if (strcmp(section, "dvb") == 0) {
+        if (strcmp(key, "enabled") == 0) {
+            config->dvb_enabled = parse_bool(value);
+        } else if (strcmp(key, "adapter") == 0) {
+            config->dvb_adapter = atoi(value);
+        } else if (strcmp(key, "frontend") == 0) {
+            config->dvb_frontend = atoi(value);
+        } else if (strcmp(key, "demux") == 0) {
+            config->dvb_demux = atoi(value);
+        } else if (strcmp(key, "frequency_khz") == 0) {
+            config->dvb_frequency_khz = atoi(value);
+        } else if (strcmp(key, "symbol_rate") == 0) {
+            config->dvb_symbol_rate = atoi(value);
+        } else if (strcmp(key, "delivery_system") == 0) {
+            if (strcmp(value, "dvb-s") == 0) config->dvb_delivery_system = 1;
+            else if (strcmp(value, "dvb-s2") == 0) config->dvb_delivery_system = 2;
+            else if (strcmp(value, "dvb-c") == 0) config->dvb_delivery_system = 3;
+            else if (strcmp(value, "dvb-c2") == 0) config->dvb_delivery_system = 4;
+            else config->dvb_delivery_system = 0;
+        } else if (strcmp(key, "modulation") == 0) {
+            if (strcmp(value, "qpsk") == 0) config->dvb_modulation = 1;
+            else if (strcmp(value, "psk_8") == 0) config->dvb_modulation = 2;
+            else if (strcmp(value, "qam_16") == 0) config->dvb_modulation = 3;
+            else if (strcmp(value, "qam_32") == 0) config->dvb_modulation = 4;
+            else if (strcmp(value, "qam_64") == 0) config->dvb_modulation = 5;
+            else if (strcmp(value, "qam_128") == 0) config->dvb_modulation = 6;
+            else if (strcmp(value, "qam_256") == 0) config->dvb_modulation = 7;
+            else config->dvb_modulation = 0;
+        } else if (strcmp(key, "fec") == 0) {
+            if (strcmp(value, "1_2") == 0) config->dvb_fec = 1;
+            else if (strcmp(value, "2_3") == 0) config->dvb_fec = 2;
+            else if (strcmp(value, "3_4") == 0) config->dvb_fec = 3;
+            else if (strcmp(value, "5_6") == 0) config->dvb_fec = 4;
+            else if (strcmp(value, "7_8") == 0) config->dvb_fec = 5;
+            else if (strcmp(value, "8_9") == 0) config->dvb_fec = 6;
+            else if (strcmp(value, "9_10") == 0) config->dvb_fec = 7;
+            else config->dvb_fec = 0;
+        } else if (strcmp(key, "inversion") == 0) {
+            if (strcmp(value, "on") == 0) config->dvb_inversion = 1;
+            else if (strcmp(value, "off") == 0) config->dvb_inversion = 2;
+            else config->dvb_inversion = 0;
+        } else if (strcmp(key, "polarity") == 0) {
+            if (strcmp(value, "h") == 0) config->dvb_polarity = 1;
+            else if (strcmp(value, "v") == 0) config->dvb_polarity = 2;
+            else config->dvb_polarity = 0;
+        } else if (strcmp(key, "service_id") == 0) {
+            config->dvb_service_id = (int)strtol(value, NULL, 0);
+        }
     }
-    
-    return 0;
 }
 
 int cccam_load_config(const char *config_file, cccam_config_t *config) {
     FILE *fp;
     char line[256];
-    int line_num = 0;
     char current_section[64] = "";
     
     if (!config) {
         config = &g_config;
     }
+
+    // Valores por omissão
+    *config = g_config;
+    memset(config->log_file, 0, sizeof(config->log_file));
+    memset(config->user_file, 0, sizeof(config->user_file));
+    memset(config->dvbapi_socket, 0, sizeof(config->dvbapi_socket));
     
     fp = fopen(config_file, "r");
     if (!fp) {
         cccam_log(LOG_WARN, "Ficheiro de configuração '%s' não encontrado. A usar valores por omissão.", config_file);
-        *config = g_config;
         return 0;
     }
     
     while (fgets(line, sizeof(line), fp)) {
-        line_num++;
         char *p = line;
         
         // Remove espaços no início
@@ -97,77 +229,23 @@ int cccam_load_config(const char *config_file, cccam_config_t *config) {
             if (end) {
                 *end = '\0';
                 strncpy(current_section, p + 1, sizeof(current_section) - 1);
+                current_section[sizeof(current_section) - 1] = '\0';
             }
             continue;
         }
         
-        // Parsing da secção [hop_control]
-        if (strcmp(current_section, "hop_control") == 0) {
-            char *key, *value;
-            char *colon = strchr(p, '=');
-            if (colon) {
-                *colon = '\0';
-                key = trim(p);
-                value = trim(colon + 1);
-                if (strcmp(key, "max_hops") == 0) {
-                    cccam_hop_control_set_limit((uint8_t)atoi(value));
-                }
-            }
-            continue;
-        }
-        
-        // Parsing da secção [rest_api]
-        if (strcmp(current_section, "rest_api") == 0) {
-            char *key, *value;
-            char *colon = strchr(p, '=');
-            if (colon) {
-                *colon = '\0';
-                key = trim(p);
-                value = trim(colon + 1);
-                if (strcmp(key, "port") == 0) {
-                    // A porta será usada no cccam3_init
-                } else if (strcmp(key, "enabled") == 0) {
-                    // Será verificado no cccam3_init
-                }
-            }
-            continue;
-        }
-        
-        // Parsing da secção [web_interface]
-        if (strcmp(current_section, "web_interface") == 0) {
-            char *key, *value;
-            char *colon = strchr(p, '=');
-            if (colon) {
-                *colon = '\0';
-                key = trim(p);
-                value = trim(colon + 1);
-                if (strcmp(key, "enabled") == 0) {
-                    // Será verificado no cccam3_init
-                } else if (strcmp(key, "path") == 0) {
-                    // Será verificado no cccam3_init
-                }
-            }
-            continue;
-        }
-        
-        // Parsing da secção [user_manager]
-        if (strcmp(current_section, "user_manager") == 0) {
-            char *key, *value;
-            char *colon = strchr(p, '=');
-            if (colon) {
-                *colon = '\0';
-                key = trim(p);
-                value = trim(colon + 1);
-                // Armazenar configuração se necessário
-            }
-            continue;
-        }
-        
-        // Parsing normal para as outras secções
-        parse_line(p, config);
+        parse_key_value(p, config, current_section);
     }
     
     fclose(fp);
+
+    // Sincronizar a configuração global (usada pela API REST e outros módulos)
+    g_config = *config;
+
+    // Aplicar valores carregados aos subsistemas
+    if (config->user_file[0] != '\0') {
+        cccam_user_manager_set_config_file(config->user_file);
+    }
     cccam_log(LOG_INFO, "Configuração carregada de '%s'", config_file);
     return 0;
 }
@@ -188,10 +266,22 @@ void cccam_print_config(cccam_config_t *config) {
     if (config->log_file[0] != '\0') {
         cccam_log(LOG_INFO, "Ficheiro de Log: %s", config->log_file);
     }
-    cccam_log(LOG_INFO, "Limite de Hops: %d", cccam_hop_control_get_limit());
+    cccam_log(LOG_INFO, "Limite de Hops: %d (timeout: %d segundos)", config->hop_limit, config->hop_timeout);
     cccam_log(LOG_INFO, "API REST: %s (porta %d)", 
-              cccam_rest_api_is_running() ? "ativa" : "inativa", 
-              cccam_rest_api_get_port());
-    cccam_log(LOG_INFO, "Interface Web: %s", cccam_rest_api_is_running() ? "ativa" : "inativa");
-    cccam_log(LOG_INFO, "Utilizadores: %d", cccam_user_manager_get_count());
+              config->rest_api_enabled ? "ativada" : "desativada", config->rest_api_port);
+    cccam_log(LOG_INFO, "Interface Web: %s", config->web_interface_enabled ? "ativada" : "desativada");
+    cccam_log(LOG_INFO, "Newcamd: %s (porta %d)", 
+              config->newcamd_enabled ? "ativado" : "desativado", config->newcamd_port);
+    cccam_log(LOG_INFO, "DVB-API: %s (%s)", 
+              config->dvbapi_enabled ? "ativada" : "desativada",
+              config->dvbapi_socket[0] != '\0' ? config->dvbapi_socket : "caminho por omissão");
+    cccam_log(LOG_INFO, "STAPI: %s", config->stapi_enabled ? "ativada" : "desativada");
+    cccam_log(LOG_INFO, "DVB: %s (adapter %d, frontend %d, %d kHz, SR %d, serviço %d)",
+              config->dvb_enabled ? "ativado" : "desativado",
+              config->dvb_adapter, config->dvb_frontend,
+              config->dvb_frequency_khz, config->dvb_symbol_rate, config->dvb_service_id);
+    cccam_log(LOG_INFO, "Modos de criptografia permitidos: 0x%02X", config->allowed_crypt_modes);
+    if (config->user_file[0] != '\0') {
+        cccam_log(LOG_INFO, "Ficheiro de utilizadores: %s", config->user_file);
+    }
 }

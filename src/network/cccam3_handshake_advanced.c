@@ -1,8 +1,10 @@
 #include "cccam3_handshake_advanced.h"
 #include "cccam3_crypto_advanced.h"
+#include "cccam3_crypto.h"
 #include "cccam3_utils.h"
 #include "cccam3_logger.h"
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
@@ -63,8 +65,8 @@ void cccam_handshake_advanced_cleanup(void) {
 
 // --- Handshake RSA ---
 
-int cccam_handshake_rsa_server(cccam_login_msg_t *login, uint8_t *response_handshake) {
-    if (!login || !response_handshake) {
+int cccam_handshake_rsa_server(cccam_login_msg_t *login, uint8_t *response_handshake, size_t response_size) {
+    if (!login || !response_handshake || response_size < 16 + 12 + 16 + 16) {
         cccam_log(LOG_ERROR, "CCshare: Handshake RSA - parâmetros inválidos");
         return -1;
     }
@@ -157,8 +159,8 @@ int cccam_handshake_rsa_client(cccam_login_msg_t *login, const uint8_t *server_h
 
 // --- Handshake Legado (compatibilidade) ---
 
-int cccam_handshake_legacy_server(cccam_login_msg_t *login, uint8_t *response_handshake) {
-    if (!login || !response_handshake) {
+int cccam_handshake_legacy_server(cccam_login_msg_t *login, uint8_t *response_handshake, size_t response_size) {
+    if (!login || !response_handshake || response_size < 16) {
         return -1;
     }
 
@@ -235,22 +237,49 @@ uint8_t cccam_handshake_get_mode(void) {
     return g_handshake_mode;
 }
 
-int cccam_handshake_encrypt(uint8_t *data, size_t len) {
-    if (!data || len == 0) return -1;
+size_t cccam_handshake_get_response_len(void) {
+    if (g_handshake_mode >= HANDSHAKE_MODE_RSA_AES) {
+        return 16 + 12 + 16 + 16;
+    }
+    return 16;
+}
+
+int cccam_handshake_get_session_key(uint8_t *key, size_t *key_len) {
+    if (!key || !key_len) {
+        return -1;
+    }
+    if (g_session_key_len == 0) {
+        return -1;
+    }
+    if (*key_len < g_session_key_len) {
+        *key_len = g_session_key_len;
+        return -1;
+    }
+    memcpy(key, g_session_key, g_session_key_len);
+    *key_len = g_session_key_len;
+    return 0;
+}
+
+int cccam_handshake_encrypt(uint8_t *data, size_t *len, size_t capacity) {
+    if (!data || !len || *len == 0) return -1;
 
     switch (g_handshake_mode) {
         case HANDSHAKE_MODE_RSA_AES:
         case HANDSHAKE_MODE_AES_GCM:
             // AES-GCM com chave de sessão
+            if (capacity < *len + 12 + 16) {
+                cccam_log(LOG_ERROR, "CCshare: Buffer insuficiente para encriptação AES-GCM");
+                return -1;
+            }
             {
                 uint8_t iv[12];
                 generate_seed(iv, sizeof(iv));
                 uint8_t tag[16];
                 size_t tag_len = sizeof(tag);
-                uint8_t *ciphertext = malloc(len + 16);
+                uint8_t *ciphertext = malloc(*len + 16);
                 if (!ciphertext) return -1;
 
-                int result = cccam_crypto_aes_gcm_encrypt(data, len,
+                int result = cccam_crypto_aes_gcm_encrypt(data, *len,
                                                            g_session_key, g_session_key_len,
                                                            iv, sizeof(iv),
                                                            ciphertext, tag, &tag_len);
@@ -261,38 +290,39 @@ int cccam_handshake_encrypt(uint8_t *data, size_t len) {
 
                 // Substitui dados originais: IV + Ciphertext + Tag
                 memcpy(data, iv, sizeof(iv));
-                memcpy(data + sizeof(iv), ciphertext, len);
-                memcpy(data + sizeof(iv) + len, tag, tag_len);
+                memcpy(data + sizeof(iv), ciphertext, *len);
+                memcpy(data + sizeof(iv) + *len, tag, tag_len);
                 free(ciphertext);
-                return len + sizeof(iv) + tag_len;
+                *len = *len + sizeof(iv) + tag_len;
+                return 0;
             }
         case HANDSHAKE_MODE_AES:
-            // AES simples (ECB/CBC) - compatível com CCcam
-            return cccam_crypto_aes(data, len, g_session_key, g_session_key_len, 1);
+            if (*len % 16 != 0) {
+                return -1;
+            }
+            return cccam_crypto_aes(data, *len, g_session_key, g_session_key_len, 1);
         case HANDSHAKE_MODE_RC4:
-            // RC4 - compatível com CCcam
-            return cccam_crypto_rc4(data, len, g_session_key, g_session_key_len);
+            return cccam_crypto_rc4(data, *len, g_session_key, g_session_key_len);
         case HANDSHAKE_MODE_LEGACY:
         default:
-            // Sem encriptação (ou RC4-like do CCcam)
             return 0;
     }
 }
 
-int cccam_handshake_decrypt(uint8_t *data, size_t len) {
-    if (!data || len == 0) return -1;
+int cccam_handshake_decrypt(uint8_t *data, size_t *len) {
+    if (!data || !len || *len == 0) return -1;
 
     switch (g_handshake_mode) {
         case HANDSHAKE_MODE_RSA_AES:
         case HANDSHAKE_MODE_AES_GCM:
             // AES-GCM com chave de sessão
-            if (len < 12 + 16) return -1;
+            if (*len < 12 + 16) return -1;
             {
                 uint8_t iv[12];
                 memcpy(iv, data, 12);
                 uint8_t tag[16];
-                memcpy(tag, data + len - 16, 16);
-                size_t ciphertext_len = len - 12 - 16;
+                memcpy(tag, data + *len - 16, 16);
+                size_t ciphertext_len = *len - 12 - 16;
                 uint8_t *plaintext = malloc(ciphertext_len + 1);
                 if (!plaintext) return -1;
 
@@ -308,12 +338,16 @@ int cccam_handshake_decrypt(uint8_t *data, size_t len) {
 
                 memcpy(data, plaintext, ciphertext_len);
                 free(plaintext);
-                return ciphertext_len;
+                *len = ciphertext_len;
+                return 0;
             }
         case HANDSHAKE_MODE_AES:
-            return cccam_crypto_aes(data, len, g_session_key, g_session_key_len, 0);
+            if (*len % 16 != 0) {
+                return -1;
+            }
+            return cccam_crypto_aes(data, *len, g_session_key, g_session_key_len, 0);
         case HANDSHAKE_MODE_RC4:
-            return cccam_crypto_rc4(data, len, g_session_key, g_session_key_len);
+            return cccam_crypto_rc4(data, *len, g_session_key, g_session_key_len);
         case HANDSHAKE_MODE_LEGACY:
         default:
             return 0;

@@ -1,5 +1,6 @@
 #include "cccam3_optimizer.h"
 #include "cccam3_logger.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>

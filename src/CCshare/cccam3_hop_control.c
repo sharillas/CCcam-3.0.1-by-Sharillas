@@ -6,6 +6,7 @@
 
 // --- Variáveis Globais ---
 static uint8_t g_max_hops = CCCAM_DEFAULT_HOP_LIMIT;
+static int g_hop_timeout = CCCAM_HOP_TIMEOUT;
 static cccam_hop_entry_t *g_hop_entries = NULL;
 static int g_hop_count = 0;
 static int g_hop_total_checks = 0;
@@ -20,13 +21,6 @@ static int hop_match(cccam_hop_entry_t *entry, uint16_t caid, uint16_t provid,
     if (!entry) return 0;
     return (entry->caid == caid && entry->provid == provid && 
             entry->sid == sid && entry->client_id == client_id);
-}
-
-// Verifica se uma entrada expirou
-static int hop_is_expired(cccam_hop_entry_t *entry) {
-    if (!entry) return 1;
-    time_t now = time(NULL);
-    return (now - entry->timestamp) > CCCAM_HOP_TIMEOUT;
 }
 
 // --- Implementação das Funções ---
@@ -67,26 +61,6 @@ int cccam_hop_control_check(uint16_t caid, uint16_t provid, uint16_t sid,
         cccam_log(LOG_DEBUG, "CCshare: Hop Control - BLOQUEADO (CAID %04X SID %04X hop %d > %d)", 
                   caid, sid, hop, g_max_hops);
         return 0; // Bloqueado
-    }
-    
-    // Verifica se já existe um pedido recente para este canal (prevenção de loops)
-    cccam_hop_entry_t *current = g_hop_entries;
-    while (current) {
-        if (hop_match(current, caid, provid, sid, client_id)) {
-            // Verifica se o pedido anterior ainda é recente
-            if (!hop_is_expired(current)) {
-                // Mesmo cliente a pedir o mesmo canal muito rapidamente
-                // Pode indicar loop ou ataque
-                if (current->hop >= hop) {
-                    // O hop não aumentou, pode ser loop
-                    g_hop_blocked++;
-                    cccam_log(LOG_WARN, "CCshare: Hop Control - LOOP DETECTADO (CAID %04X SID %04X cliente %u)", 
-                              caid, sid, client_id);
-                    return 0; // Bloqueado
-                }
-            }
-        }
-        current = current->next;
     }
     
     // Permite o pedido
@@ -167,6 +141,13 @@ void cccam_hop_control_set_limit(uint8_t limit) {
     }
 }
 
+void cccam_hop_control_set_timeout(int timeout_seconds) {
+    if (timeout_seconds > 0) {
+        g_hop_timeout = timeout_seconds;
+        cccam_log(LOG_INFO, "CCshare: Timeout de hops definido para %d segundos", g_hop_timeout);
+    }
+}
+
 uint8_t cccam_hop_control_get_limit(void) {
     return g_max_hops;
 }
@@ -178,7 +159,7 @@ int cccam_hop_control_clean_expired(void) {
     time_t now = time(NULL);
     
     while (current) {
-        if ((now - current->timestamp) > CCCAM_HOP_TIMEOUT) {
+        if ((now - current->timestamp) > g_hop_timeout) {
             if (prev) {
                 prev->next = current->next;
             } else {
@@ -217,7 +198,7 @@ void cccam_hop_control_debug_print(void) {
             cccam_log(LOG_DEBUG, "  [%d] CAID %04X SID %04X hop %d cliente %u expira em %lds", 
                       count, current->caid, current->sid, current->hop, 
                       current->client_id, 
-                      (current->timestamp + CCCAM_HOP_TIMEOUT) - time(NULL));
+                      (current->timestamp + g_hop_timeout) - time(NULL));
             current = current->next;
         }
     }

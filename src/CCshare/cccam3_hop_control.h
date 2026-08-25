@@ -49,6 +49,9 @@ void cccam_hop_control_set_limit(uint8_t limit);
 // Obtém o limite máximo de hops
 uint8_t cccam_hop_control_get_limit(void);
 
+// Define o timeout (segundos) das entradas de hop
+void cccam_hop_control_set_timeout(int timeout_seconds);
+
 // Limpa entradas antigas
 int cccam_hop_control_clean_expired(void);
 

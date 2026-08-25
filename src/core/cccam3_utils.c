@@ -2,6 +2,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <arpa/inet.h>
+#include <openssl/sha.h>
+#include <openssl/rand.h>
 
 uint32_t cccam_hton32(uint32_t host_val) {
     return htonl(host_val);
@@ -20,6 +23,9 @@ uint16_t cccam_ntoh16(uint16_t net_val) {
 }
 
 void cccam_generate_seed(uint8_t *seed, size_t size) {
+    if (size > 0 && RAND_bytes(seed, (int)size) == 1) {
+        return;
+    }
     srand((unsigned int)time(NULL) ^ (unsigned int)clock());
     for (size_t i = 0; i < size; i++) {
         seed[i] = (uint8_t)(rand() & 0xFF);

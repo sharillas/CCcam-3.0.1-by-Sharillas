@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <time.h>
 
-#define MAX_CLIENTS 100
+#define MAX_CLIENTS CCCAM3_CLIENT_SLOTS
 
 static cccam_client_t *g_clients[MAX_CLIENTS];
 static int g_client_count = 0;
@@ -86,6 +86,13 @@ cccam_client_t *cccam_client_find_by_id(uint32_t client_id) {
         }
     }
     return NULL;
+}
+
+cccam_client_t *cccam_client_get_by_index(int index) {
+    if (index < 0 || index >= MAX_CLIENTS) {
+        return NULL;
+    }
+    return g_clients[index];
 }
 
 int cccam_client_get_count(void) {

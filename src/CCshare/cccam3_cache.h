@@ -37,6 +37,9 @@ void cccam_cache_get_stats(int *total_entries, int *hit_count, int *miss_count);
 // Define o timeout global da cache
 void cccam_cache_set_timeout(int timeout_seconds);
 
+// Ativa/desativa a cache
+void cccam_cache_set_enabled(int enabled);
+
 // Debug - imprime estado da cache
 void cccam_cache_debug_print(void);
 

@@ -18,6 +18,15 @@ static int g_dvbapi_socket_fd = -1;
 static cccam_dvbapi_demux_t g_demux[DVBAPI_MAX_DEMUX];
 static int g_dvbapi_running = 0;
 static pthread_t g_dvbapi_thread;
+static char g_socket_path[108] = DVBAPI_SOCKET_PATH;
+
+void cccam_dvbapi_set_socket_path(const char *path) {
+    if (path && path[0] != '\0') {
+        strncpy(g_socket_path, path, sizeof(g_socket_path) - 1);
+        g_socket_path[sizeof(g_socket_path) - 1] = '\0';
+        cccam_log(LOG_INFO, "DVBAPI: Socket definido para %s", g_socket_path);
+    }
+}
 
 // --- Funções Auxiliares ---
 
@@ -117,24 +126,24 @@ static int dvbapi_socket_connect(void) {
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, DVBAPI_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, g_socket_path, sizeof(addr.sun_path) - 1);
 
     // Tenta ligar (tenta várias vezes se falhar)
     int retry = 0;
     int max_retries = 5;
     while (retry < max_retries) {
         if (connect(g_dvbapi_socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            cccam_log(LOG_INFO, "DVBAPI: Ligado ao socket %s", DVBAPI_SOCKET_PATH);
+            cccam_log(LOG_INFO, "DVBAPI: Ligado ao socket %s", g_socket_path);
             return 0;
         }
         cccam_log(LOG_WARN, "DVBAPI: Falha ao ligar ao socket %s (tentativa %d/%d): %s", 
-                  DVBAPI_SOCKET_PATH, retry + 1, max_retries, strerror(errno));
+                  g_socket_path, retry + 1, max_retries, strerror(errno));
         usleep(500000); // Aguarda 500ms
         retry++;
     }
 
     cccam_log(LOG_ERROR, "DVBAPI: Falha ao ligar ao socket %s após %d tentativas", 
-              DVBAPI_SOCKET_PATH, max_retries);
+              g_socket_path, max_retries);
     close(g_dvbapi_socket_fd);
     g_dvbapi_socket_fd = -1;
     return -1;
