@@ -93,14 +93,12 @@ jobs:
           make clean
           make CC=${{ matrix.cc }} CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -I$OPENSSL_PREFIX/include ${{ matrix.cflags }} -no-pie" LDFLAGS="-L$OPENSSL_PREFIX/lib -static -lssl -lcrypto -lm -lpthread"
           file bin/cccam3
-          mkdir -p pkg-${{ matrix.name }}
-          cp bin/cccam3 pkg-${{ matrix.name }}/cccam3
-          chmod +x pkg-${{ matrix.name }}/cccam3
-          tar czf CCcam3-${{ matrix.name }}.tar.gz -C pkg-${{ matrix.name }} cccam3
-          ls -la CCcam3-${{ matrix.name }}.tar.gz
+          cp bin/cccam3 cccam3-${{ matrix.name }}
+          chmod +x cccam3-${{ matrix.name }}
+          ls -la cccam3-${{ matrix.name }}
 
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "$RELEASE_TAG" CCcam3-${{ matrix.name }}.tar.gz --clobber
+          gh release upload "$RELEASE_TAG" cccam3-${{ matrix.name }} --clobber

@@ -130,13 +130,12 @@ if [ "$FROM_SOURCE" -eq 1 ]; then
 else
     echo ">> A descarregar binário ($ARCH)..."
     mkdir -p "$BIN_DIR"
-    download "$RELEASE_URL/CCcam3-$ARCH.tar.gz" "/tmp/cccam3-$ARCH.tar.gz" || {
+    download "$RELEASE_URL/cccam3-$ARCH" "$BIN_DIR/cccam3.tmp" || {
         echo "ERRO: falha a descarregar o binário."
         exit 1
     }
-    tar xzf "/tmp/cccam3-$ARCH.tar.gz" -C /tmp
-    install -m 0755 /tmp/cccam3 "$BIN_DIR/cccam3"
-    rm -f "/tmp/cccam3-$ARCH.tar.gz" /tmp/cccam3
+    chmod 0755 "$BIN_DIR/cccam3.tmp"
+    mv -f "$BIN_DIR/cccam3.tmp" "$BIN_DIR/cccam3"
 fi
 
 echo ">> Binário instalado em $BIN_DIR/cccam3"
