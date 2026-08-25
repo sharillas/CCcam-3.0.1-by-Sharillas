@@ -1,4 +1,5 @@
 #include "cccam3.h"
+#include "cccam3_client.h"
 #include "cccam3_logger.h"
 #include "cccam3_protocol.h"
 #include <stdlib.h>
