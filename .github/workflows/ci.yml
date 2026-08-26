@@ -75,6 +75,7 @@ jobs:
       - name: Publish debug logs (se falhou)
         if: failure()
         run: |
+          mkdir -p ci-debug
           cp /tmp/cccam3.log /tmp/cccam3_stdout.log /tmp/build.log /tmp/build_pcsc.log /tmp/test.log ci-debug/ 2>/dev/null || true
           git config user.name "CI Debug"
           git config user.email "ci@localhost"
