@@ -21,7 +21,8 @@ typedef enum {
 typedef struct cccam_user_t {
     uint32_t id;
     char username[CCCAM_MAX_USERNAME];
-    char password_hash[64];          // Hash SHA256 da password
+    char password_hash[65];         // Hash SHA256 hex (64 chars) + NUL
+    char password[CCCAM_MAX_PASSWORD]; // Password em claro (para Newcamd MD5-crypt)
     cccam_user_level_t level;
     uint8_t max_hops;                // Limite de hops para este utilizador
     uint8_t enabled;                 // 1 = ativo, 0 = inativo
@@ -51,6 +52,17 @@ int cccam_user_manager_remove_user(const char *username);
 // Autentica um utilizador
 int cccam_user_manager_authenticate(const char *username, const char *password,
                                     cccam_user_t **user_out);
+
+// Registo automático: cria o utilizador se não existir e persiste no ficheiro
+// de utilizadores. Nível USER e max_hops 2 por omissão.
+int cccam_user_manager_auto_register(const char *username, const char *password,
+                                     cccam_user_t **user_out);
+
+// Ativa/desativa o registo automático (usado pelo handler de login)
+void cccam_user_manager_set_auto_register(int enabled);
+
+// Verifica se o registo automático está ativo
+int cccam_user_manager_auto_register_enabled(void);
 
 // Obtém um utilizador pelo nome
 cccam_user_t *cccam_user_manager_get_user(const char *username);

@@ -42,13 +42,9 @@ void cccam_ecm_cleanup(void);
 // Processa um pedido ECM
 int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *response);
 
-// Obtém CW de um leitor (físico ou remoto)
-int cccam_ecm_get_cw_from_reader(uint16_t caid, uint16_t provid, uint16_t sid,
-                                  const uint8_t *ecm_data, uint16_t ecm_len,
-                                  uint8_t *cw, uint8_t *hop);
-
-// Envia CW para o cliente
-int cccam_ecm_send_cw(int client_fd, const cccam_ecm_response_t *response);
+// Envia CW para o cliente (usa o contexto de criptografia da sessão)
+int cccam_ecm_send_cw(int client_fd, const cccam_crypto_ctx_t *crypto,
+                      const cccam_ecm_response_t *response);
 
 // Estatísticas de ECM
 void cccam_ecm_get_stats(int *total_requests, int *cache_hits, int *cache_misses, 

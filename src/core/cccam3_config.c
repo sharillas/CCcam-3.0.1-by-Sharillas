@@ -2,6 +2,7 @@
 #include "cccam3_logger.h"
 #include "cccam3_hop_control.h"
 #include "cccam3_rest_api.h"
+#include "cccam3_client.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,19 +97,23 @@ static void parse_key_value(char *line, cccam_config_t *config, const char *sect
         } else if (strcmp(key, "timeout") == 0) {
             config->hop_timeout = atoi(value);
         } else if (strcmp(key, "block_loops") == 0) {
-            // A deteção de loops por repetição foi removida (bloqueava pedidos legítimos)
+            config->block_loops = parse_bool(value);
         }
     } else if (strcmp(section, "rest_api") == 0) {
         if (strcmp(key, "port") == 0) {
             config->rest_api_port = atoi(value);
         } else if (strcmp(key, "enabled") == 0) {
             config->rest_api_enabled = parse_bool(value);
+        } else if (strcmp(key, "user") == 0) {
+            strncpy(config->rest_api_user, value, sizeof(config->rest_api_user) - 1);
+        } else if (strcmp(key, "password") == 0) {
+            strncpy(config->rest_api_password, value, sizeof(config->rest_api_password) - 1);
         }
     } else if (strcmp(section, "web_interface") == 0) {
         if (strcmp(key, "enabled") == 0) {
             config->web_interface_enabled = parse_bool(value);
         } else if (strcmp(key, "path") == 0) {
-            // O caminho é fixo (/web) na API REST
+            strncpy(config->web_path, value, sizeof(config->web_path) - 1);
         }
     } else if (strcmp(section, "user_manager") == 0) {
         if (strcmp(key, "enabled") == 0) {
@@ -116,13 +121,18 @@ static void parse_key_value(char *line, cccam_config_t *config, const char *sect
         } else if (strcmp(key, "file") == 0) {
             strncpy(config->user_file, value, sizeof(config->user_file) - 1);
         } else if (strcmp(key, "auto_register") == 0) {
-            // Registro automático não suportado
+            config->auto_register = parse_bool(value);
         }
     } else if (strcmp(section, "newcamd") == 0) {
         if (strcmp(key, "enabled") == 0) {
             config->newcamd_enabled = parse_bool(value);
         } else if (strcmp(key, "port") == 0) {
             config->newcamd_port = atoi(value);
+        } else if (strcmp(key, "caid") == 0) {
+            config->newcamd_caid = (int)strtol(value, NULL, 16);
+        } else if (strcmp(key, "key") == 0) {
+            strncpy(config->newcamd_des_key, value, sizeof(config->newcamd_des_key) - 1);
+            config->newcamd_des_key[sizeof(config->newcamd_des_key) - 1] = '\0';
         }
     } else if (strcmp(section, "dvbapi") == 0) {
         if (strcmp(key, "enabled") == 0) {
@@ -130,13 +140,17 @@ static void parse_key_value(char *line, cccam_config_t *config, const char *sect
         } else if (strcmp(key, "socket") == 0) {
             strncpy(config->dvbapi_socket, value, sizeof(config->dvbapi_socket) - 1);
         } else if (strcmp(key, "max_demux") == 0) {
-            // DVBAPI_MAX_DEMUX é fixo em tempo de compilação
+            config->dvbapi_max_demux = atoi(value);
         }
     } else if (strcmp(section, "stapi") == 0) {
         if (strcmp(key, "enabled") == 0) {
             config->stapi_enabled = parse_bool(value);
         } else if (strcmp(key, "device") == 0) {
-            // Dispositivo STAPI específico de hardware
+            strncpy(config->stapi_device, value, sizeof(config->stapi_device) - 1);
+        }
+    } else if (strcmp(section, "emu") == 0) {
+        if (strcmp(key, "key_file") == 0 || strcmp(key, "softcam_key") == 0) {
+            strncpy(config->emu_key_file, value, sizeof(config->emu_key_file) - 1);
         }
     } else if (strcmp(section, "dvb") == 0) {
         if (strcmp(key, "enabled") == 0) {
@@ -239,6 +253,36 @@ int cccam_load_config(const char *config_file, cccam_config_t *config) {
     
     fclose(fp);
 
+    // Validação de valores (produção)
+    if (config->listen_port < 1 || config->listen_port > 65535) {
+        cccam_log(LOG_WARN, "Configuração: porta inválida %d, a usar 12000", config->listen_port);
+        config->listen_port = 12000;
+    }
+    if (config->newcamd_port < 1 || config->newcamd_port > 65535) {
+        config->newcamd_port = 34000;
+    }
+    if (config->rest_api_port < 1 || config->rest_api_port > 65535) {
+        config->rest_api_port = 8080;
+    }
+    if (config->max_clients < 1 || config->max_clients > CCCAM3_CLIENT_SLOTS) {
+        cccam_log(LOG_WARN, "Configuração: max_clients %d fora do intervalo, limitado a %d",
+                  config->max_clients, CCCAM3_CLIENT_SLOTS);
+        if (config->max_clients < 1) config->max_clients = 1;
+        else config->max_clients = CCCAM3_CLIENT_SLOTS;
+    }
+    if (config->hop_limit < 1 || config->hop_limit > 20) {
+        config->hop_limit = 3;
+    }
+    if (config->cache_timeout < 1) {
+        config->cache_timeout = 10;
+    }
+    if (config->log_level < 0 || config->log_level > 4) {
+        config->log_level = 2;
+    }
+    if (config->dvbapi_max_demux < 1 || config->dvbapi_max_demux > 64) {
+        config->dvbapi_max_demux = 8;
+    }
+
     // Sincronizar a configuração global (usada pela API REST e outros módulos)
     g_config = *config;
 
@@ -270,8 +314,9 @@ void cccam_print_config(cccam_config_t *config) {
     cccam_log(LOG_INFO, "API REST: %s (porta %d)", 
               config->rest_api_enabled ? "ativada" : "desativada", config->rest_api_port);
     cccam_log(LOG_INFO, "Interface Web: %s", config->web_interface_enabled ? "ativada" : "desativada");
-    cccam_log(LOG_INFO, "Newcamd: %s (porta %d)", 
-              config->newcamd_enabled ? "ativado" : "desativado", config->newcamd_port);
+    cccam_log(LOG_INFO, "Newcamd: %s (porta %d, CAID %04X)", 
+              config->newcamd_enabled ? "ativado" : "desativado", config->newcamd_port,
+              config->newcamd_caid);
     cccam_log(LOG_INFO, "DVB-API: %s (%s)", 
               config->dvbapi_enabled ? "ativada" : "desativada",
               config->dvbapi_socket[0] != '\0' ? config->dvbapi_socket : "caminho por omissão");

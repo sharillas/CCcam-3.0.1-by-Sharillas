@@ -10,10 +10,12 @@
 #include "cccam3_user_manager.h"
 #include "cccam3_handshake_advanced.h"
 #include "cccam3_optimizer.h"
-#include "cccam3_protocol_newcamd.h"
 #include "cccam3_dvbapi.h"
 #include "cccam3_stapi.h"
 #include "cccam3_dvb.h"
+#include "cccam3_newcamd.h"
+#include "cccam3_emu.h"
+#include "cccam3_emu_des.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -95,6 +97,16 @@ int cccam3_init(cccam_config_t *config) {
     cccam_user_manager_set_config_file(resolved_path);
     cccam_log(LOG_INFO, "Ficheiro de utilizadores: %s", resolved_path);
 
+    // Ficheiro de chaves da emulação (SoftCam.Key)
+    if (g_config.emu_key_file[0] != '\0') {
+        server_resolve_path(g_config.emu_key_file, resolved_path, sizeof(resolved_path));
+        cccam_emu_set_key_file(resolved_path);
+        cccam_log(LOG_INFO, "Ficheiro de chaves EMU: %s", resolved_path);
+    }
+
+    // Registo automático de utilizadores
+    cccam_user_manager_set_auto_register(g_config.auto_register);
+
     if (cccam_card_manager_init() != 0) {
         cccam_log(LOG_ERROR, "Falha ao inicializar Card Manager");
         return -1;
@@ -129,6 +141,7 @@ int cccam3_init(cccam_config_t *config) {
         if (g_config.dvbapi_socket[0] != '\0') {
             cccam_dvbapi_set_socket_path(g_config.dvbapi_socket);
         }
+        cccam_dvbapi_set_max_demux(g_config.dvbapi_max_demux);
         if (cccam_dvbapi_init() != 0) {
             cccam_log(LOG_WARN, "DVBAPI: Falha ao inicializar (continuando sem hardware)");
         }
@@ -136,8 +149,11 @@ int cccam3_init(cccam_config_t *config) {
         cccam_log(LOG_INFO, "DVBAPI: Desativada pela configuração");
     }
 
-    // Inicializar STAPI (stub)
+    // Inicializar STAPI
     if (g_config.stapi_enabled) {
+        if (g_config.stapi_device[0] != '\0') {
+            cccam_stapi_set_device(g_config.stapi_device);
+        }
         if (cccam_stapi_init() != 0) {
             cccam_log(LOG_WARN, "STAPI: Falha ao inicializar (continuando sem hardware)");
         }
@@ -170,6 +186,10 @@ int cccam3_init(cccam_config_t *config) {
 
     // Inicializar API REST
     if (g_config.rest_api_enabled) {
+        if (g_config.rest_api_user[0] != '\0' && g_config.rest_api_password[0] != '\0') {
+            cccam_rest_api_set_auth(g_config.rest_api_user, g_config.rest_api_password);
+        }
+        cccam_rest_api_set_web_path(g_config.web_path[0] != '\0' ? g_config.web_path : "/web");
         if (cccam_rest_api_init(g_config.rest_api_port) != 0) {
             cccam_log(LOG_WARN, "Falha ao iniciar API REST (porta %d)", g_config.rest_api_port);
         }
@@ -179,6 +199,24 @@ int cccam3_init(cccam_config_t *config) {
 
     // Criar listener Newcamd
     if (g_config.newcamd_enabled) {
+        // Chave DES do protocolo Newcamd
+        if (g_config.newcamd_des_key[0] != '\0') {
+            uint8_t des_key[14] = {0};
+            if (strlen(g_config.newcamd_des_key) >= 28) {
+                for (int i = 0; i < 14; i++) {
+                    unsigned int byte;
+                    if (sscanf(g_config.newcamd_des_key + i * 2, "%2x", &byte) != 1) {
+                        break;
+                    }
+                    des_key[i] = (uint8_t)byte;
+                }
+                cccam_newcamd_set_des_key(des_key);
+            } else {
+                cccam_log(LOG_WARN, "Newcamd: Chave DES inválida na configuração (28 chars hex esperados)");
+            }
+        }
+        cccam_newcamd_set_caid((uint16_t)g_config.newcamd_caid);
+
         g_newcamd_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (g_newcamd_fd >= 0) {
             int nc_opt = 1;
@@ -281,6 +319,10 @@ static int read_client_message(int fd, uint8_t *buffer, size_t buf_size, size_t 
 }
 
 static void server_destroy_client(cccam_client_t *client) {
+    if (client->ncd_session) {
+        free(client->ncd_session);
+        client->ncd_session = NULL;
+    }
     cccam_client_destroy(client);
     cccam_load_balancer_release_connection();
 }
@@ -339,8 +381,17 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
 
     cccam_user_t *user = NULL;
     if (cccam_user_manager_authenticate(login.username, login.password, &user) != 0) {
-        cccam_log(LOG_WARN, "Autenticação falhada para '%s'", login.username);
-        return -1;
+        if (g_config.auto_register) {
+            // Registo automático: cria o utilizador e persiste no ficheiro
+            if (cccam_user_manager_auto_register(login.username, login.password, &user) != 0) {
+                cccam_log(LOG_WARN, "Autenticação falhada para '%s' (auto-registo recusado)", login.username);
+                return -1;
+            }
+            cccam_log(LOG_INFO, "Cliente '%s' registado automaticamente", login.username);
+        } else {
+            cccam_log(LOG_WARN, "Autenticação falhada para '%s'", login.username);
+            return -1;
+        }
     }
 
     uint8_t handshake_resp[16 + 12 + 16 + 16] = {0};
@@ -356,7 +407,7 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
         key_len = 0;
         wire_mode = CCCAM_CRYPT_MODE_NONE;
     }
-    if (cccam_protocol_set_crypto(wire_mode, session_key, key_len) != 0) {
+    if (cccam_protocol_set_crypto(&client->crypto, wire_mode, session_key, key_len) != 0) {
         cccam_log(LOG_ERROR, "Falha ao definir criptografia para '%s'", login.username);
         return -1;
     }
@@ -421,7 +472,7 @@ static int handle_client_ecm(cccam_client_t *client, const void *payload, size_t
     cccam_ecm_response_t response;
     int result = cccam_ecm_process(&request, &response);
     if (result == 0 && response.found) {
-        cccam_ecm_send_cw(client->socket_fd, &response);
+        cccam_ecm_send_cw(client->socket_fd, &client->crypto, &response);
         cccam_user_manager_register_ecm(client->username, 1);
     } else {
         cccam_user_manager_register_ecm(client->username, 0);
@@ -431,157 +482,33 @@ static int handle_client_ecm(cccam_client_t *client, const void *payload, size_t
 
 // --- Handlers Newcamd ---
 
-static int handle_newcamd_login(cccam_client_t *client, const void *payload, size_t payload_len) {
-    if (client->is_authenticated) {
-        return 0;
-    }
-
-    if (!payload || payload_len < 2) {
-        cccam_log(LOG_WARN, "Newcamd: Login com payload inválido");
-        return -1;
-    }
-
-    const char *p = (const char *)payload;
-    size_t user_len = strnlen(p, payload_len);
-    if (user_len >= payload_len || user_len >= sizeof(client->username)) {
-        return -1;
-    }
-
-    size_t pass_off = user_len + 1;
-    if (pass_off >= payload_len) {
-        return -1;
-    }
-    size_t pass_len = strnlen(p + pass_off, payload_len - pass_off);
-    if (pass_len >= payload_len - pass_off || pass_len >= sizeof(client->password)) {
-        return -1;
-    }
-
-    char username[64] = {0};
-    char password[64] = {0};
-    memcpy(username, p, user_len);
-    memcpy(password, p + pass_off, pass_len);
-
-    cccam_user_t *user = NULL;
-    if (cccam_user_manager_authenticate(username, password, &user) != 0) {
-        cccam_log(LOG_WARN, "Newcamd: Autenticação falhada para '%s'", username);
-        return -1;
-    }
-
-    strncpy(client->username, username, sizeof(client->username) - 1);
-    client->hop_count = user->max_hops;
-    cccam_client_authenticate(client);
-
-    uint8_t ack[256];
-    size_t ack_len = sizeof(ack);
-    if (cccam_newcamd_build(ack, &ack_len, NEWCAMD_CMD_LOGIN_ACK, (const uint8_t *)"OK", 2) != 0) {
-        return -1;
-    }
-    if (send(client->socket_fd, ack, ack_len, MSG_NOSIGNAL) != (ssize_t)ack_len) {
-        return -1;
-    }
-
-    cccam_log(LOG_INFO, "Newcamd: Cliente '%s' autenticado (nível %d, max hops %d)",
-              username, user->level, user->max_hops);
-    return 0;
-}
-
-static int handle_newcamd_ecm(cccam_client_t *client, const void *payload, size_t payload_len) {
-    if (!client->is_authenticated) {
-        cccam_log(LOG_WARN, "Newcamd: ECM de cliente não autenticado (ID %u)", client->client_id);
-        return -1;
-    }
-
-    cccam_ecm_request_t request;
-    if (parse_ecm_payload(payload, payload_len, &request) != 0) {
-        cccam_log(LOG_WARN, "Newcamd: ECM com payload inválido (%zu bytes)", payload_len);
-        return -1;
-    }
-    request.client_id = client->client_id;
-    request.hop = client->hop_count;
-    request.received_at = time(NULL);
-
-    cccam_ecm_response_t response;
-    int result = cccam_ecm_process(&request, &response);
-    if (result == 0 && response.found) {
-        uint8_t cw_payload[4 + 16 + 1 + 6] = {0};
-        uint32_t ecm_time = htonl((uint32_t)response.generated_at);
-        memcpy(cw_payload, &ecm_time, 4);
-        memcpy(cw_payload + 4, response.cw, 16);
-        cw_payload[20] = response.hop;
-        cw_payload[21] = (uint8_t)(response.caid >> 8);
-        cw_payload[22] = (uint8_t)(response.caid & 0xFF);
-        cw_payload[23] = (uint8_t)(response.provid >> 8);
-        cw_payload[24] = (uint8_t)(response.provid & 0xFF);
-        cw_payload[25] = (uint8_t)(response.sid >> 8);
-        cw_payload[26] = (uint8_t)(response.sid & 0xFF);
-
-        uint8_t msg[CCCAM3_BUFFER_SIZE];
-        size_t msg_len = sizeof(msg);
-        if (cccam_newcamd_build(msg, &msg_len, NEWCAMD_CMD_CW, cw_payload, sizeof(cw_payload)) == 0) {
-            send(client->socket_fd, msg, msg_len, MSG_NOSIGNAL);
-        }
-        cccam_user_manager_register_ecm(client->username, 1);
-    } else {
-        cccam_user_manager_register_ecm(client->username, 0);
-    }
-    return 0;
-}
-
 static void handle_newcamd_message(cccam_client_t *client) {
-    uint8_t buffer[CCCAM3_BUFFER_SIZE];
-    size_t msg_len = 0;
+    cccam_newcamd_session_t *session = (cccam_newcamd_session_t *)client->ncd_session;
+    uint8_t buffer[NCD_MAX_MSG];
+    uint8_t len_hdr[2];
 
-    uint8_t header[8];
-    if (recv_exact(client->socket_fd, header, sizeof(header)) != 0) {
+    // Formato real newcamd: [2 bytes de comprimento][payload encriptado]
+    if (recv_exact(client->socket_fd, len_hdr, sizeof(len_hdr)) != 0) {
         cccam_log(LOG_INFO, "Newcamd: Cliente %u desligado", client->client_id);
         server_destroy_client(client);
         return;
     }
 
-    uint32_t len_net;
-    memcpy(&len_net, header + 4, 4);
-    uint32_t payload_len = ntohl(len_net);
-    if (payload_len > sizeof(buffer) - 8) {
+    uint32_t payload_len = ((uint32_t)len_hdr[0] << 8) | len_hdr[1];
+    if (payload_len > sizeof(buffer)) {
         cccam_log(LOG_WARN, "Newcamd: Mensagem demasiado grande (%u bytes)", payload_len);
         server_destroy_client(client);
         return;
     }
 
-    if (recv_exact(client->socket_fd, buffer + 8, payload_len) != 0) {
+    if (recv_exact(client->socket_fd, buffer, payload_len) != 0) {
         cccam_log(LOG_INFO, "Newcamd: Cliente %u desligado", client->client_id);
         server_destroy_client(client);
         return;
     }
-    memcpy(buffer, header, sizeof(header));
-    msg_len = 8 + payload_len;
 
-    uint32_t cmd_id = 0;
-    uint8_t *payload = NULL;
-    size_t parsed_payload_len = 0;
-    if (cccam_newcamd_parse(buffer, msg_len, &cmd_id, &payload, &parsed_payload_len) != 0) {
-        cccam_log(LOG_WARN, "Newcamd: Mensagem inválida do cliente %u", client->client_id);
-        server_destroy_client(client);
-        return;
-    }
-
-    int failed = 0;
-    switch (cmd_id) {
-        case NEWCAMD_CMD_LOGIN:
-            failed = handle_newcamd_login(client, payload, parsed_payload_len);
-            break;
-        case NEWCAMD_CMD_ECM:
-            failed = handle_newcamd_ecm(client, payload, parsed_payload_len);
-            break;
-        case NEWCAMD_CMD_KEEPALIVE:
-            cccam_client_update_keepalive(client);
-            break;
-        default:
-            cccam_log(LOG_DEBUG, "Newcamd: Comando 0x%02X ignorado do cliente %u", cmd_id, client->client_id);
-            break;
-    }
-
-    free(payload);
-    if (failed) {
+    if (cccam_newcamd_process(client->socket_fd, session, buffer, payload_len) != 0) {
+        cccam_log(LOG_INFO, "Newcamd: Cliente %u terminou a sessão", client->client_id);
         server_destroy_client(client);
     }
 }
@@ -605,7 +532,8 @@ static void handle_client_message(cccam_client_t *client) {
     void *payload = NULL;
     size_t payload_len = 0;
 
-    if (cccam_protocol_parse(buffer, msg_len, &header, &payload, &payload_len) != 0) {
+    if (cccam_protocol_parse(buffer, msg_len, &header, &payload, &payload_len,
+                             &client->crypto) != 0) {
         cccam_log(LOG_WARN, "Mensagem inválida do cliente %u", client->client_id);
         server_destroy_client(client);
         return;
@@ -727,8 +655,17 @@ int cccam3_run(void) {
                     close(client_fd);
                 } else {
                     client->is_newcamd = 1;
-                    cccam_log(LOG_INFO, "Newcamd: Nova ligação de %s:%d (ID %u)",
-                              inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client->client_id);
+                    client->ncd_session = calloc(1, sizeof(cccam_newcamd_session_t));
+                    if (!client->ncd_session ||
+                        cccam_newcamd_session_start(client_fd,
+                            (cccam_newcamd_session_t *)client->ncd_session) != 0) {
+                        cccam_log(LOG_WARN, "Newcamd: Falha ao iniciar sessão com %s:%d",
+                                  inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                        server_destroy_client(client);
+                    } else {
+                        cccam_log(LOG_INFO, "Newcamd: Nova ligação de %s:%d (ID %u)",
+                                  inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client->client_id);
+                    }
                 }
             }
         }
@@ -816,7 +753,7 @@ static int run_self_tests(void) {
         cccam_msg_header_t hdr;
         void *pl = NULL;
         size_t pl_len = 0;
-        if (cccam_protocol_parse(buf, len, &hdr, &pl, &pl_len) != 0 ||
+        if (cccam_protocol_parse(buf, len, &hdr, &pl, &pl_len, NULL) != 0 ||
             hdr.msg_id != CCCAM_MSG_LOGIN || pl_len != len - CCCAM3_HEADER_SIZE) {
             failures++;
             printf("TESTE FALHOU: parse login\n");
@@ -841,6 +778,77 @@ static int run_self_tests(void) {
         printf("TESTE FALHOU: hop control\n");
     }
     cccam_hop_control_cleanup();
+
+    // Criptografia por sessão: AES-GCM round-trip
+    {
+        cccam_crypto_ctx_t ctx;
+        cccam_protocol_reset_crypto(&ctx);
+        uint8_t key[32];
+        for (int i = 0; i < 32; i++) key[i] = (uint8_t)(i * 7 + 1);
+        uint8_t data[64];
+        for (int i = 0; i < 64; i++) data[i] = (uint8_t)(i * 3);
+        uint8_t original[64];
+        memcpy(original, data, sizeof(data));
+        size_t len = 64;
+
+        if (cccam_protocol_set_crypto(&ctx, CCCAM_CRYPT_MODE_AES_GCM, key, 32) != 0 ||
+            cccam_protocol_encrypt(&ctx, data, &len, sizeof(data), CCCAM_MSG_ECM) != 0 ||
+            len != 64 + 16 ||
+            cccam_protocol_decrypt(&ctx, data, &len, CCCAM_MSG_ECM) != 0 ||
+            len != 64 || memcmp(data, original, 64) != 0) {
+            failures++;
+            printf("TESTE FALHOU: AES-GCM round-trip\n");
+        }
+    }
+
+    // Newcamd DES round-trip
+    {
+        uint8_t ncd_key[16];
+        uint8_t msg[64];
+        for (int i = 0; i < 14; i++) ncd_key[i] = (uint8_t)(i + 1);
+        uint8_t des14[14];
+        for (int i = 0; i < 14; i++) des14[i] = (uint8_t)(0x10 + i);
+        cccam_newcamd_login_key(des14, ncd_key, 14, ncd_key);
+
+        memset(msg, 0, sizeof(msg));
+        msg[0] = 0x02;
+        msg[1] = 0x03;
+        strcpy((char *)msg + 8, "\xE0hello");
+        int len_n = 15;
+        len_n = cccam_newcamd_des_encrypt(msg, len_n, ncd_key);
+        if (len_n < 0) {
+            failures++;
+            printf("TESTE FALHOU: newcamd des encrypt\n");
+        } else {
+            int dlen = cccam_newcamd_des_decrypt(msg, len_n, ncd_key);
+            if (dlen != 15 || msg[8] != 0xE0 || strcmp((char *)msg + 9, "hello") != 0) {
+                failures++;
+                printf("TESTE FALHOU: newcamd des decrypt\n");
+            }
+        }
+    }
+
+    // EMU: carregamento de chaves SoftCam.Key
+    {
+        const char *key_file = "/tmp/cccam3_test_softcam.key";
+        FILE *fp = fopen(key_file, "w");
+        if (fp) {
+            fprintf(fp, "# teste\nF 26000001 00 1122334455667788\nI 030B00 08 0102030405060708\n");
+            fclose(fp);
+        }
+        cccam_emu_set_key_file(key_file);
+        if (cccam_emu_init() != 0 || cccam_emu_get_key_count() != 2) {
+            failures++;
+            printf("TESTE FALHOU: emu key load\n");
+        }
+        uint8_t sw[8];
+        if (cccam_emu_find_key('F', 0x26000001, NULL, 0, sw, sizeof(sw)) != 8) {
+            failures++;
+            printf("TESTE FALHOU: emu key find\n");
+        }
+        cccam_emu_cleanup();
+        unlink(key_file);
+    }
 
     if (failures == 0) {
         printf("Todos os testes passaram.\n");

@@ -30,6 +30,7 @@ cccam_client_t *cccam_client_create(int socket_fd, struct sockaddr_in *addr) {
     client->connected_at = time(NULL);
     client->last_keepalive = time(NULL);
     client->hop_count = 1;
+    cccam_protocol_reset_crypto(&client->crypto);
     
     if (addr) {
         memcpy(&client->addr, addr, sizeof(struct sockaddr_in));

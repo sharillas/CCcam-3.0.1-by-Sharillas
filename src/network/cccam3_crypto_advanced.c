@@ -125,6 +125,124 @@ int cccam_crypto_generate_iv(uint8_t *iv, size_t iv_len) {
     return RAND_bytes(iv, iv_len);
 }
 
+// --- AES-GCM com AAD ---
+
+int cccam_crypto_aes_gcm_encrypt_aad(const uint8_t *plaintext, size_t plaintext_len,
+                                      const uint8_t *key, size_t key_len,
+                                      const uint8_t *iv, size_t iv_len,
+                                      const uint8_t *aad, size_t aad_len,
+                                      uint8_t *ciphertext, uint8_t *tag, size_t *tag_len) {
+    EVP_CIPHER_CTX *ctx = NULL;
+    int len, ciphertext_len;
+
+    if (!plaintext || !key || !iv || !ciphertext || !tag || !tag_len) {
+        return -1;
+    }
+
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) return -1;
+
+    const EVP_CIPHER *cipher = NULL;
+    if (key_len == 16) cipher = EVP_aes_128_gcm();
+    else if (key_len == 24) cipher = EVP_aes_192_gcm();
+    else if (key_len == 32) cipher = EVP_aes_256_gcm();
+    else {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+
+    if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+
+    if (aad && aad_len > 0) {
+        if (EVP_EncryptUpdate(ctx, NULL, &len, aad, (int)aad_len) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+    }
+
+    if (EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, (int)plaintext_len) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+    ciphertext_len = len;
+
+    if (EVP_EncryptFinal_ex(ctx, ciphertext + len, &len) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+    ciphertext_len += len;
+
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+    *tag_len = 16;
+
+    EVP_CIPHER_CTX_free(ctx);
+    return ciphertext_len;
+}
+
+int cccam_crypto_aes_gcm_decrypt_aad(const uint8_t *ciphertext, size_t ciphertext_len,
+                                      const uint8_t *key, size_t key_len,
+                                      const uint8_t *iv, size_t iv_len,
+                                      const uint8_t *aad, size_t aad_len,
+                                      const uint8_t *tag, size_t tag_len,
+                                      uint8_t *plaintext) {
+    EVP_CIPHER_CTX *ctx = NULL;
+    int len, plaintext_len;
+
+    if (!ciphertext || !key || !iv || !tag || !plaintext) {
+        return -1;
+    }
+
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) return -1;
+
+    const EVP_CIPHER *cipher = NULL;
+    if (key_len == 16) cipher = EVP_aes_128_gcm();
+    else if (key_len == 24) cipher = EVP_aes_192_gcm();
+    else if (key_len == 32) cipher = EVP_aes_256_gcm();
+    else {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+
+    if (EVP_DecryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+
+    if (aad && aad_len > 0) {
+        if (EVP_DecryptUpdate(ctx, NULL, &len, aad, (int)aad_len) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+    }
+
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, (int)tag_len, (void *)tag) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+
+    if (EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, (int)ciphertext_len) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+    plaintext_len = len;
+
+    if (EVP_DecryptFinal_ex(ctx, plaintext + len, &len) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+    plaintext_len += len;
+
+    EVP_CIPHER_CTX_free(ctx);
+    return plaintext_len;
+}
+
 // --- RSA ---
 
 // Gera par de chaves RSA

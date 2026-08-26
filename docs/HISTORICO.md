@@ -328,3 +328,72 @@ make
 make test
 ./bin/cccam3 -c conf/cccam3.conf
 ```
+
+---
+
+## 17. Produção Real — Correções de Bugs e Implementações Reais (2026)
+
+Esta secção documenta a segunda ronda de trabalho: correção dos bugs críticos
+e substituição de todas as funcionalidades simuladas por implementações reais.
+
+### 17.1 Bugs críticos corrigidos
+
+| # | Bug | Correção |
+|---|---|---|
+| 1 | Chave de sessão era estado global partilhado entre clientes | Novo `cccam_crypto_ctx_t` por sessão: cada cliente/leitor remoto tem a sua chave e modo. `cccam_protocol_*` passou a receber o contexto. |
+| 2 | AES-GCM negociado mas tráfego em claro; `AES_set_encrypt_key` usado para desencriptar; AES/3DES sem validação de blocos (OOB) | AES-GCM real no protocolo (nonce = msg_id + contador, AAD = msg_id, tag 16B anexado ao payload); `AES_set_decrypt_key` na desencriptação; validação `len % 16` (AES) e `len % 8` (3DES). |
+| 3 | `password_hash` escrevia 65 bytes num buffer de 64 | Campo `password_hash[65]` e escrita com bounds. |
+| 4 | Leitores remotos ficavam excluídos para sempre após 1 falha | Estado OK reposto no sucesso; após 3 falhas consecutivas, backoff de 30 s (`retry_after`), voltando a tentar. |
+| 5 | `connect` remoto bloqueante (podia travar o servidor) | Connect não bloqueante com timeout de 5 s (`poll`) + `SO_SNDTIMEO`/`SO_RCVTIMEO`. |
+| 6 | `cache_timeout` da config ignorado; "LRU" era FIFO | `cccam_cache_add(..., expires_at=0)` usa o timeout configurado; lista duplamente ligada com promoção ao topo no hit e evicção da cauda (LRU verdadeiro). |
+| 7 | Hop control ineficaz (clientes entravam no hop máximo) | O hop servido = hop da origem + 1; verificado contra o limite global e o limite do utilizador; cache guarda o hop da origem. |
+| 8 | Logger reutilizava `va_list` sem `va_copy` (UB) | `va_copy` + bounds no nível + `localtime_r`. |
+| 9 | REST API sem autenticação, parsing frágil, write parcial, race no cleanup | HTTP Basic (hash SHA256 em comparação), parsing de pedido/headers robusto, `send_all`, mutex+condvar para o arranque da thread. |
+
+### 17.2 Implementações reais (fim das simulações)
+
+- **EMU real (SoftCam.Key)**: parser de chaves F/I/T + motor Viaccess completo
+  (Via 1, 2.6 e 3, incluindo HD sur-encryption D2 0F/11 e 13/15, portado do
+  OSCam-emu) e BISS (mode 1 por SID/"All Feeds"). Ficheiro em `[emu] key_file`.
+- **Leitor local real via PC/SC**: `cccam3_smartcard.c` fala com smartcards
+  reais (Seca/Mediaguard via C1 3C/C1 3A, Conax via DD A2/DD CA, conforme o
+  OSCam). Compilar com `make USE_PCSC=1` (libpcsclite). Sem PC/SC não há
+  CWs simuladas — o leitor devolve erro.
+- **Newcamd real (newcs/cs357x, NCD_524)**: sequência de init de 14 bytes,
+  chave de sessão DES (Eurocrypt ECS2), login com password em claro
+  (mgcamd) ou MD5-crypt `$1$abcdefgh$` (clientes OSCam), CARD_DATA,
+  ECM por tabela 0x80/0x81 e KEEPALIVE. Config `[newcamd] caid` + `key`.
+- **DVBAPI real (ca_pmt OSCam)**: o servidor escuta no UNIX socket
+  `/tmp/camd.socket`; os descodificadores ligam-se e enviam CA_PMT
+  (0x9F8032xx); o servidor responde com DMX_SET_FILTER, CA_SET_PID,
+  CA_SET_DESCR_MODE e CA_SET_DESCR (CW par/ímpar). FILTER_DATA processa os ECMs.
+- **STAPI real**: dlopen da libstapi.so do STLinux (STPTI_Init/Open/Service
+  com DESCR_KEY_SET); sem a biblioteca/hardware ST falha limpo (sem stub).
+- **Auto-registo**: `[user_manager] auto_register = 1` cria utilizadores
+  desconhecidos (nível USER) e persiste-os no ficheiro.
+- **REST**: autenticação Basic configurável (`[rest_api] user/password`).
+- **Removido**: CWs simuladas dos leitores local/EMU, leitores de exemplo
+  hardcoded, SHA1 de zeros, versão hardcoded na interface web, protocolo
+  Newcamd próprio (substituído pelo real).
+
+### 17.3 Novos módulos
+
+| Ficheiro | Função |
+|---|---|
+| `src/CCshare/cccam3_emu.c/.h` | Motor EMU: SoftCam.Key + dispatcher + BISS |
+| `src/CCshare/cccam3_emu_des.c/.h` | DES Viaccess (nc_des), DES OSCam, DES Newcamd |
+| `src/CCshare/cccam3_emu_viaccess.c` | Viaccess Via 1/2.6/3 + HD sur-encryption |
+| `src/CCshare/cccam3_emu_viaccess_tables.c` | Tabelas de lookup HD (OSCam) |
+| `src/hardware/cccam3_smartcard.c/.h` | Leitor local de smartcards via PC/SC |
+| `src/network/cccam3_newcamd.c/.h` | Servidor Newcamd real (newcs/cs357x) |
+| `.github/workflows/ci.yml` | CI: compila (+PC/SC), self-tests e smoke test em cada push |
+
+### 17.4 Limitações atuais (honestas)
+
+- O wire format do protocolo "CCcam" próprio continua incompatível com
+  clientes CCcam comerciais (não é o protocolo binário CCcam real).
+- Viaccess local (cartão físico) requer a sequência completa de init da
+  sessão; usa-se EMU/leitor remoto para Viaccess.
+- STAPI depende da libstapi.so do STLinux e hardware ST.
+- Cryptoworks/Nagra/Irdeto/PowerVU na EMU: ainda não implementados
+  (Viaccess + BISS disponíveis).

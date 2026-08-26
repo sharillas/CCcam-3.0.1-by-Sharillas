@@ -3,6 +3,25 @@
 ## Visão Geral
 A API REST do CCcam3 permite monitorizar e gerir o servidor remotamente através de requisições HTTP. Todas as respostas são em formato JSON.
 
+## Autenticação
+
+Se a configuração `[rest_api]` tiver `user` e `password` definidos, todos os
+endpoints (incluindo `/web`) exigem autenticação HTTP Basic:
+
+```ini
+[rest_api]
+enabled = 1
+port = 8080
+user = admin
+password = muda-me
+```
+
+```bash
+curl -u admin:muda-me http://localhost:8080/status
+```
+
+Sem `user`/`password` configurados, a API fica aberta (avisado no log).
+
 ## Endpoints Disponíveis
 
 ### 1. Status do Servidor

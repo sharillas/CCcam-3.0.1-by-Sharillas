@@ -5,6 +5,15 @@
 #include <time.h>
 #include <netinet/in.h>
 
+// --- Contexto de Criptografia por Sessão ---
+typedef struct {
+    uint8_t mode;              // CCCAM_CRYPT_MODE_*
+    uint8_t key[32];
+    size_t key_len;
+    uint64_t tx_counter;       // Contador de mensagens enviadas (nonce GCM)
+    uint64_t rx_counter;       // Contador de mensagens recebidas (nonce GCM)
+} cccam_crypto_ctx_t;
+
 // --- Estruturas de Cliente ---
 typedef struct {
     int socket_fd;
@@ -23,6 +32,8 @@ typedef struct {
     int is_newcamd;
     uint8_t node_id[8];
     struct sockaddr_in addr;
+    cccam_crypto_ctx_t crypto;
+    void *ncd_session;         // cccam_newcamd_session_t (sessão Newcamd)
 } cccam_client_t;
 
 // --- Estruturas de Mensagens ---
@@ -105,17 +116,27 @@ typedef struct {
     int log_level;
     int rest_api_enabled;
     int rest_api_port;
+    char rest_api_user[64];      // Autenticação Basic (vazio = desativada)
+    char rest_api_password[64];
     int web_interface_enabled;
+    char web_path[64];           // Caminho da interface web
     int newcamd_enabled;
     int newcamd_port;
+    int newcamd_caid;            // CAID da porta Newcamd (hex, 0 = qualquer)
+    char newcamd_des_key[29];    // Chave DES em hex (28 chars = 14 bytes)
     int dvbapi_enabled;
     char dvbapi_socket[256];
+    int dvbapi_max_demux;
     int stapi_enabled;
+    char stapi_device[128];
     int user_manager_enabled;
     char user_file[256];
+    int auto_register;           // Registo automático de utilizadores
     int hop_limit;
     int hop_timeout;
+    int block_loops;             // Deteção de loops (informacional)
     uint32_t allowed_crypt_modes;
+    char emu_key_file[256];      // Ficheiro SoftCam.Key
     int dvb_enabled;
     int dvb_adapter;
     int dvb_frontend;

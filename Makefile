@@ -2,7 +2,14 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL
-LDFLAGS = -lssl -lcrypto -lm -lpthread
+LDFLAGS = -lssl -lcrypto -lm -lpthread -ldl
+
+# Suporte a leitores locais de smartcard via PC/SC:
+#   make USE_PCSC=1  (requer libpcsclite-dev)
+ifdef USE_PCSC
+CFLAGS += -DUSE_PCSC
+LDFLAGS += -lpcsclite
+endif
 
 SRC_DIR = src
 OBJ_DIR = obj
@@ -20,15 +27,20 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/network/cccam3_handshake_advanced.c \
           $(SRC_DIR)/network/cccam3_crypto.c \
           $(SRC_DIR)/network/cccam3_crypto_advanced.c \
-          $(SRC_DIR)/network/cccam3_protocol_newcamd.c \
+          $(SRC_DIR)/network/cccam3_newcamd.c \
           $(SRC_DIR)/hardware/cccam3_dvbapi.c \
           $(SRC_DIR)/hardware/cccam3_stapi.c \
           $(SRC_DIR)/hardware/cccam3_dvb.c \
+          $(SRC_DIR)/hardware/cccam3_smartcard.c \
           $(SRC_DIR)/CCshare/cccam3_cache.c \
           $(SRC_DIR)/CCshare/cccam3_ecm.c \
           $(SRC_DIR)/CCshare/cccam3_card_manager.c \
           $(SRC_DIR)/CCshare/cccam3_hop_control.c \
           $(SRC_DIR)/CCshare/cccam3_user_manager.c \
+          $(SRC_DIR)/CCshare/cccam3_emu.c \
+          $(SRC_DIR)/CCshare/cccam3_emu_des.c \
+          $(SRC_DIR)/CCshare/cccam3_emu_viaccess.c \
+          $(SRC_DIR)/CCshare/cccam3_emu_viaccess_tables.c \
           $(SRC_DIR)/api/cccam3_rest_api.c \
           $(SRC_DIR)/api/cccam3_web_interface.c
 

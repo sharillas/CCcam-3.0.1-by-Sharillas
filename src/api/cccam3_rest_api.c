@@ -13,46 +13,144 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <time.h>
+#include <strings.h>
+#include <openssl/sha.h>
 
 // --- Variáveis Globais ---
 static int g_rest_api_fd = -1;
 static int g_rest_api_port = REST_API_DEFAULT_PORT;
 static int g_rest_api_running = 0;
 static pthread_t g_rest_api_thread;
+static int g_rest_api_thread_started = 0;
+static pthread_mutex_t g_rest_api_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_rest_api_cond = PTHREAD_COND_INITIALIZER;
+static char g_auth_user[64] = "";
+static char g_auth_password[64] = "";
+static char g_web_path[64] = "/web";
+
+void cccam_rest_api_set_auth(const char *user, const char *password) {
+    if (user && password) {
+        strncpy(g_auth_user, user, sizeof(g_auth_user) - 1);
+        strncpy(g_auth_password, password, sizeof(g_auth_password) - 1);
+        cccam_log(LOG_INFO, "REST API: Autenticação Basic ativada (utilizador '%s')", user);
+    }
+}
+
+void cccam_rest_api_set_web_path(const char *path) {
+    if (path && path[0] == '/' && strlen(path) < sizeof(g_web_path)) {
+        strncpy(g_web_path, path, sizeof(g_web_path) - 1);
+        g_web_path[sizeof(g_web_path) - 1] = '\0';
+    }
+}
 
 // --- Funções Auxiliares ---
 
-static void send_json_response(int client_fd, const char *json) {
-    char header[256];
+static int send_all(int fd, const void *data, size_t len) {
+    const char *p = (const char *)data;
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = write(fd, p + sent, len - sent);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (n == 0) return -1;
+        sent += (size_t)n;
+    }
+    return 0;
+}
+
+static void send_http_response(int client_fd, int code, const char *status,
+                               const char *content_type, const char *body) {
+    char header[512];
+    size_t body_len = strlen(body);
     snprintf(header, sizeof(header),
-             "HTTP/1.1 200 OK\r\n"
-             "Content-Type: application/json\r\n"
+             "HTTP/1.1 %d %s\r\n"
+             "Content-Type: %s\r\n"
              "Access-Control-Allow-Origin: *\r\n"
              "Content-Length: %zu\r\n"
+             "Connection: close\r\n"
              "\r\n",
-             strlen(json));
-    write(client_fd, header, strlen(header));
-    write(client_fd, json, strlen(json));
+             code, status, content_type, body_len);
+    send_all(client_fd, header, strlen(header));
+    send_all(client_fd, body, body_len);
+}
+
+static void send_json_response(int client_fd, const char *json) {
+    send_http_response(client_fd, 200, "OK", "application/json", json);
 }
 
 static void send_not_found(int client_fd, const char *path) {
     char response[512];
     snprintf(response, sizeof(response),
-             "HTTP/1.1 404 Not Found\r\n"
-             "Content-Type: text/plain\r\n"
-             "\r\n"
              "Rota não encontrada: %s\n"
-             "Rotas disponíveis: /status, /stats, /stats/cache, /stats/ecm, /stats/readers, /web",
-             path);
-    write(client_fd, response, strlen(response));
+             "Rotas disponíveis: /status, /stats, /stats/cache, /stats/ecm, "
+             "/stats/readers, /channels, %s",
+             path, g_web_path);
+    send_http_response(client_fd, 404, "Not Found", "text/plain", response);
 }
 
-// Gera conteúdo JSON das estatísticas da cache
+// --- Autenticação Basic ---
+
+// Decodifica base64 e devolve 1 se as credenciais batem com as configuradas
+static int check_basic_auth(const char *auth_header) {
+    const char *prefix = "Basic ";
+    static const char b64[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    if (strncmp(auth_header, prefix, 6) != 0) return 0;
+
+    char decoded[256];
+    size_t in_len = strlen(auth_header + 6);
+    if (in_len == 0 || in_len > sizeof(decoded) * 4 / 3) return 0;
+
+    // Base64 decode
+    size_t out_len = 0;
+    uint32_t buf = 0;
+    int bits = 0;
+    for (size_t i = 0; i < in_len; i++) {
+        char c = auth_header[6 + i];
+        if (c == '=') break;
+        const char *p = strchr(b64, c);
+        if (!p) return 0;
+        buf = (buf << 6) | (uint32_t)(p - b64);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            decoded[out_len++] = (char)((buf >> bits) & 0xFF);
+        }
+    }
+    decoded[out_len] = '\0';
+
+    char *colon = strchr(decoded, ':');
+    if (!colon) return 0;
+    *colon = '\0';
+    const char *user = decoded;
+    const char *pass = colon + 1;
+
+    // Comparação com hash SHA256 (evita timing attacks e comparações diretas)
+    if (strlen(user) != strlen(g_auth_user)) return 0;
+    if (strlen(pass) != strlen(g_auth_password)) return 0;
+
+    uint8_t h1[SHA256_DIGEST_LENGTH], h2[SHA256_DIGEST_LENGTH];
+    SHA256((const unsigned char *)user, strlen(user), h1);
+    SHA256((const unsigned char *)g_auth_user, strlen(g_auth_user), h2);
+    if (memcmp(h1, h2, sizeof(h1)) != 0) return 0;
+    SHA256((const unsigned char *)pass, strlen(pass), h1);
+    SHA256((const unsigned char *)g_auth_password, strlen(g_auth_password), h2);
+    if (memcmp(h1, h2, sizeof(h1)) != 0) return 0;
+
+    return 1;
+}
+
+// --- Geração de JSON ---
+
 static void json_cache_stats(char *buffer, size_t size) {
     int total, hits, misses;
     cccam_cache_get_stats(&total, &hits, &misses);
@@ -69,7 +167,6 @@ static void json_cache_stats(char *buffer, size_t size) {
     );
 }
 
-// Gera conteúdo JSON das estatísticas ECM
 static void json_ecm_stats(char *buffer, size_t size) {
     int total, cache_hits, cache_misses, reader_success, reader_fail;
     cccam_ecm_get_stats(&total, &cache_hits, &cache_misses, &reader_success, &reader_fail);
@@ -88,7 +185,6 @@ static void json_ecm_stats(char *buffer, size_t size) {
     );
 }
 
-// Gera conteúdo JSON das estatísticas dos leitores
 static void json_reader_stats(char *buffer, size_t size) {
     int total, active, local, remote;
     cccam_card_manager_get_stats(&total, &active, &local, &remote);
@@ -104,12 +200,12 @@ static void json_reader_stats(char *buffer, size_t size) {
     );
 }
 
-// Gera conteúdo JSON do estado do servidor
 static void json_server_status(char *buffer, size_t size) {
     time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
     char time_str[32];
-    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_info);
     
     int client_count = cccam_client_get_count();
     uint8_t hop_limit = cccam_hop_control_get_limit();
@@ -131,7 +227,6 @@ static void json_server_status(char *buffer, size_t size) {
     );
 }
 
-// Gera JSON com a lista de canais do transponder DVB
 static void json_channels(char *buffer, size_t size) {
     cccam_dvb_channel_t channels[CCCAM3_DVB_MAX_CHANNELS];
     int count = cccam_dvb_get_channels(channels, CCCAM3_DVB_MAX_CHANNELS);
@@ -154,7 +249,6 @@ static void json_channels(char *buffer, size_t size) {
     snprintf(buffer + used, size - used, "\n    ]\n  }");
 }
 
-// Gera JSON completo com todas as estatísticas
 static void json_all_stats(char *buffer, size_t size) {
     char cache_buf[512], ecm_buf[512], reader_buf[512], status_buf[512];
     
@@ -181,36 +275,59 @@ static void json_all_stats(char *buffer, size_t size) {
 
 // --- Handler de Requisições HTTP ---
 
-static void handle_request(int client_fd, const char *request) {
+static void handle_request(int client_fd, char *request, size_t request_len) {
     char json[4096];
-    char *path = NULL;
-    
-    // Parse do caminho da requisição
-    char *method_end = strstr(request, " ");
-    if (!method_end) {
-        const char *bad_request = "HTTP/1.1 400 Bad Request\r\n\r\n";
-        write(client_fd, bad_request, strlen(bad_request));
-        close(client_fd);
+    char method[16] = "";
+    char path[512] = "";
+    char auth_header[256] = "";
+    int auth_header_found = 0;
+
+    // Linha de pedido: METHOD PATH HTTP/x.y
+    char *line_end = strstr(request, "\r\n");
+    if (!line_end) line_end = request + request_len;
+    *line_end = '\0';
+
+    if (sscanf(request, "%15s %511s", method, path) != 2) {
+        send_http_response(client_fd, 400, "Bad Request", "text/plain", "Pedido inválido\n");
         return;
     }
-    
-    char *path_start = method_end + 1;
-    char *path_end = strstr(path_start, " ");
-    if (!path_end) {
-        const char *bad_request = "HTTP/1.1 400 Bad Request\r\n\r\n";
-        write(client_fd, bad_request, strlen(bad_request));
-        close(client_fd);
+
+    if (strcmp(method, "GET") != 0) {
+        send_http_response(client_fd, 400, "Bad Request", "text/plain", "Método não suportado\n");
         return;
     }
-    
-    *path_end = '\0';
-    path = path_start;
-    
+
+    // Cabeçalhos (Authorization)
+    char *header_start = line_end + 2;
+    while (header_start < request + request_len) {
+        char *end = strstr(header_start, "\r\n");
+        if (!end || end == header_start) break;
+        *end = '\0';
+        if (strncasecmp(header_start, "Authorization:", 14) == 0) {
+            const char *value = header_start + 14;
+            while (*value == ' ' || *value == '\t') value++;
+            strncpy(auth_header, value, sizeof(auth_header) - 1);
+            auth_header[sizeof(auth_header) - 1] = '\0';
+            auth_header_found = 1;
+        }
+        header_start = end + 2;
+    }
+
+    // Autenticação Basic (se configurada)
+    if (g_auth_user[0] != '\0' && g_auth_password[0] != '\0') {
+        if (!auth_header_found || !check_basic_auth(auth_header)) {
+            send_http_response(client_fd, 401, "Unauthorized", "text/plain",
+                               "Unauthorized\n");
+            return;
+        }
+    }
+
     // --- Rotas ---
     if (strcmp(path, "/") == 0 || strcmp(path, "/status") == 0) {
         json_server_status(json, sizeof(json));
         send_json_response(client_fd, json);
-    } else if (strcmp(path, "/web") == 0 || strcmp(path, "/web/") == 0) {
+    } else if (strcmp(path, g_web_path) == 0 ||
+               (strcmp(g_web_path, "/web") == 0 && strcmp(path, "/web/") == 0)) {
         cccam_web_interface_serve(client_fd);
         return;
     } else if (strcmp(path, "/stats") == 0 || strcmp(path, "/stats/all") == 0) {
@@ -231,19 +348,19 @@ static void handle_request(int client_fd, const char *request) {
     } else {
         send_not_found(client_fd, path);
     }
-    
-    close(client_fd);
 }
 
 // --- Thread da API REST ---
 
 static void *rest_api_thread_func(void *arg) {
     (void)arg;
+    int bind_failed = 0;
     
     g_rest_api_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (g_rest_api_fd < 0) {
         cccam_log(LOG_ERROR, "REST API: Falha ao criar socket");
-        return NULL;
+        bind_failed = 1;
+        goto started;
     }
     
     int opt = 1;
@@ -252,26 +369,39 @@ static void *rest_api_thread_func(void *arg) {
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(g_rest_api_port);
+    addr.sin_port = htons((uint16_t)g_rest_api_port);
     addr.sin_addr.s_addr = INADDR_ANY;
     
     if (bind(g_rest_api_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        cccam_log(LOG_ERROR, "REST API: Falha ao bindar porta %d", g_rest_api_port);
+        cccam_log(LOG_ERROR, "REST API: Falha ao bindar porta %d: %s",
+                  g_rest_api_port, strerror(errno));
         close(g_rest_api_fd);
         g_rest_api_fd = -1;
-        return NULL;
+        bind_failed = 1;
+        goto started;
     }
     
     if (listen(g_rest_api_fd, 10) < 0) {
         cccam_log(LOG_ERROR, "REST API: Falha ao iniciar escuta");
         close(g_rest_api_fd);
         g_rest_api_fd = -1;
+        bind_failed = 1;
+        goto started;
+    }
+
+started:
+    pthread_mutex_lock(&g_rest_api_mutex);
+    g_rest_api_running = 1;
+    pthread_cond_broadcast(&g_rest_api_cond);
+    pthread_mutex_unlock(&g_rest_api_mutex);
+
+    if (bind_failed) {
         return NULL;
     }
     
     cccam_log(LOG_INFO, "REST API: Servidor HTTP iniciado na porta %d", g_rest_api_port);
-    cccam_log(LOG_INFO, "REST API: Interface web disponível em http://localhost:%d/web", g_rest_api_port);
-    g_rest_api_running = 1;
+    cccam_log(LOG_INFO, "REST API: Interface web disponível em http://localhost:%d%s",
+              g_rest_api_port, g_web_path);
     
     while (g_rest_api_running) {
         fd_set read_fds;
@@ -282,6 +412,7 @@ static void *rest_api_thread_func(void *arg) {
         int activity = select(g_rest_api_fd + 1, &read_fds, NULL, NULL, &tv);
         
         if (activity < 0) {
+            if (errno == EINTR) continue;
             if (g_rest_api_running) {
                 cccam_log(LOG_ERROR, "REST API: Erro no select");
             }
@@ -297,15 +428,28 @@ static void *rest_api_thread_func(void *arg) {
                 continue;
             }
             
+            // Lê o pedido até ao fim dos cabeçalhos (\r\n\r\n)
             char buffer[REST_API_MAX_BUFFER];
-            ssize_t received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
-            
-            if (received > 0) {
+            size_t received = 0;
+            int done = 0;
+            while (received < sizeof(buffer) - 1 && !done) {
+                ssize_t n = recv(client_fd, buffer + received,
+                                 sizeof(buffer) - 1 - received, 0);
+                if (n <= 0) {
+                    done = -1;
+                    break;
+                }
+                received += (size_t)n;
                 buffer[received] = '\0';
-                handle_request(client_fd, buffer);
-            } else {
-                close(client_fd);
+                if (strstr(buffer, "\r\n\r\n") != NULL) {
+                    done = 1;
+                }
             }
+            
+            if (done == 1) {
+                handle_request(client_fd, buffer, received);
+            }
+            close(client_fd);
         }
     }
     
@@ -321,10 +465,13 @@ static void *rest_api_thread_func(void *arg) {
 // --- Implementação das Funções da API ---
 
 int cccam_rest_api_init(int port) {
+    pthread_mutex_lock(&g_rest_api_mutex);
     if (g_rest_api_running) {
+        pthread_mutex_unlock(&g_rest_api_mutex);
         cccam_log(LOG_WARN, "REST API: Já está em execução");
         return 0;
     }
+    pthread_mutex_unlock(&g_rest_api_mutex);
     
     if (port > 0) {
         g_rest_api_port = port;
@@ -334,26 +481,39 @@ int cccam_rest_api_init(int port) {
         cccam_log(LOG_ERROR, "REST API: Falha ao criar thread");
         return -1;
     }
+    g_rest_api_thread_started = 1;
     
-    // Aguarda um pouco para a thread iniciar
-    usleep(100000);
+    // Aguarda a thread assinalar que está pronta (bind concluído ou falhado)
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += 3;
+    pthread_mutex_lock(&g_rest_api_mutex);
+    while (!g_rest_api_running) {
+        if (pthread_cond_timedwait(&g_rest_api_cond, &g_rest_api_mutex, &ts) != 0) {
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_rest_api_mutex);
     
     return 0;
 }
 
 void cccam_rest_api_cleanup(void) {
-    if (!g_rest_api_running) {
-        return;
-    }
-    
+    pthread_mutex_lock(&g_rest_api_mutex);
+    int was_running = g_rest_api_running;
     g_rest_api_running = 0;
+    pthread_mutex_unlock(&g_rest_api_mutex);
     
     if (g_rest_api_fd >= 0) {
         close(g_rest_api_fd);
         g_rest_api_fd = -1;
     }
     
-    pthread_join(g_rest_api_thread, NULL);
+    if (g_rest_api_thread_started) {
+        pthread_join(g_rest_api_thread, NULL);
+        g_rest_api_thread_started = 0;
+    }
+    (void)was_running;
     cccam_log(LOG_INFO, "REST API: Limpeza concluída");
 }
 

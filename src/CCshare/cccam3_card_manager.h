@@ -47,6 +47,8 @@ typedef struct {
     uint32_t ecm_fail;          // Pedidos falhados
     time_t last_used;           // Última utilização
     time_t last_error;          // Último erro
+    int consecutive_failures;   // Falhas consecutivas (backoff)
+    time_t retry_after;         // Não usar até esta hora (backoff)
     
     // Para leitores remotos
     char remote_host[256];
@@ -54,10 +56,11 @@ typedef struct {
     char remote_user[64];
     char remote_pass[64];
     int remote_fd;              // Socket para ligação remota
+    int remote_logged_in;       // 1 = sessão autenticada no servidor remoto
+    cccam_crypto_ctx_t crypto;  // Criptografia da sessão remota
     
-    // Para emulação
-    uint8_t emu_keys[32][16];   // Chaves para emulação (simplificado)
-    int emu_key_count;
+    // Para leitores locais (smartcard PC/SC)
+    char device[128];           // Nome do leitor PC/SC ("" = primeiro)
     
     struct cccam_reader_t *next;
 } cccam_reader_t;

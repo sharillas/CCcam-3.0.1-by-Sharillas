@@ -20,6 +20,21 @@ int cccam_crypto_aes_gcm_decrypt(const uint8_t *ciphertext, size_t ciphertext_le
                                   const uint8_t *tag, size_t tag_len,
                                   uint8_t *plaintext);
 
+// Encripta dados com AES-GCM e dados adicionais autenticados (AAD)
+int cccam_crypto_aes_gcm_encrypt_aad(const uint8_t *plaintext, size_t plaintext_len,
+                                      const uint8_t *key, size_t key_len,
+                                      const uint8_t *iv, size_t iv_len,
+                                      const uint8_t *aad, size_t aad_len,
+                                      uint8_t *ciphertext, uint8_t *tag, size_t *tag_len);
+
+// Decripta dados com AES-GCM e dados adicionais autenticados (AAD)
+int cccam_crypto_aes_gcm_decrypt_aad(const uint8_t *ciphertext, size_t ciphertext_len,
+                                      const uint8_t *key, size_t key_len,
+                                      const uint8_t *iv, size_t iv_len,
+                                      const uint8_t *aad, size_t aad_len,
+                                      const uint8_t *tag, size_t tag_len,
+                                      uint8_t *plaintext);
+
 // Gera um IV aleatório para AES-GCM (12 bytes)
 int cccam_crypto_generate_iv(uint8_t *iv, size_t iv_len);
 

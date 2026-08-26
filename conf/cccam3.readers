@@ -1,6 +1,8 @@
 # Ficheiro de configuração de leitores CCcam3
 # Cada leitor é definido numa secção [nome]
 
+# Leitor local de smartcard via PC/SC (Seca/Conax)
+# device = nome do leitor PC/SC (comentar para usar o primeiro disponível)
 [Local_Reader]
 type = local
 caid = 0100
@@ -8,6 +10,7 @@ provid = 0000
 hop = 1
 priority = 0
 enabled = 1
+# device = Identiv uTrust 3700 F CL Reader 00 00
 
 [Remote_Reader]
 type = remote
@@ -21,6 +24,7 @@ remote_port = 12001
 remote_user = user
 remote_pass = pass
 
+# Leitor de emulação real (SoftCam.Key: Viaccess, BISS)
 [EMU_Reader]
 type = emu
 caid = 0000

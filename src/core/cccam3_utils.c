@@ -33,16 +33,10 @@ void cccam_generate_seed(uint8_t *seed, size_t size) {
 }
 
 void cccam_sha1(const uint8_t *data, size_t len, uint8_t *hash) {
-    // Implementação SHA-1 usando OpenSSL
-    #ifdef USE_OPENSSL
     SHA_CTX ctx;
     SHA1_Init(&ctx);
     SHA1_Update(&ctx, data, len);
     SHA1_Final(hash, &ctx);
-    #else
-    // Fallback simples (apenas para demonstração)
-    memset(hash, 0, 20);
-    #endif
 }
 
 uint32_t cccam_hash_string(const char *str) {

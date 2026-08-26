@@ -1,0 +1,307 @@
+#include "cccam3_emu.h"
+#include "cccam3_logger.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+// Algoritmos por sistema de acesso condicional
+int cccam_emu_viaccess_ecm(const uint8_t *ecm, uint16_t ecm_len, uint8_t *dw);
+int cccam_emu_biss_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
+                       uint16_t ecm_len, uint8_t *dw);
+
+// --- Estrutura de Chaves ---
+
+#define CCCAM_EMU_MAX_KEYS  4096
+#define CCCAM_EMU_MAX_KEY_DATA 320  // chaves T do Viaccess têm 300 bytes
+
+typedef struct cccam_emu_key {
+    char type;                  // 'F', 'I' ou 'T'
+    uint32_t provider;          // identificador de 24 bits
+    uint8_t key_index;          // índice da chave (0-255)
+    uint8_t data[CCCAM_EMU_MAX_KEY_DATA];
+    uint8_t data_len;
+    struct cccam_emu_key *next;
+} cccam_emu_key_t;
+
+static cccam_emu_key_t *g_emu_keys = NULL;
+static int g_emu_key_count = 0;
+static char g_emu_key_file[256] = "conf/SoftCam.Key";
+static int g_emu_initialized = 0;
+
+void cccam_emu_set_key_file(const char *path) {
+    if (path && path[0] != '\0') {
+        strncpy(g_emu_key_file, path, sizeof(g_emu_key_file) - 1);
+        g_emu_key_file[sizeof(g_emu_key_file) - 1] = '\0';
+    }
+}
+
+static void emu_free_keys(void) {
+    cccam_emu_key_t *current = g_emu_keys;
+    while (current) {
+        cccam_emu_key_t *next = current->next;
+        free(current);
+        current = next;
+    }
+    g_emu_keys = NULL;
+    g_emu_key_count = 0;
+}
+
+static int hex_to_bin(const char *hex, uint8_t *out, size_t max_len) {
+    size_t len = strlen(hex);
+    if (len % 2 != 0 || len / 2 > max_len) {
+        return -1;
+    }
+    for (size_t i = 0; i < len / 2; i++) {
+        unsigned int byte;
+        if (sscanf(hex + i * 2, "%2x", &byte) != 1) {
+            return -1;
+        }
+        out[i] = (uint8_t)byte;
+    }
+    return (int)(len / 2);
+}
+
+static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
+                        const uint8_t *data, uint8_t data_len) {
+    if (g_emu_key_count >= CCCAM_EMU_MAX_KEYS) {
+        cccam_log(LOG_WARN, "EMU: Limite de chaves atingido (%d)", CCCAM_EMU_MAX_KEYS);
+        return;
+    }
+
+    // Substitui chave idêntica existente
+    cccam_emu_key_t *current = g_emu_keys;
+    while (current) {
+        if (current->type == type && current->provider == provider &&
+            current->key_index == key_index) {
+            memcpy(current->data, data, data_len);
+            current->data_len = data_len;
+            return;
+        }
+        current = current->next;
+    }
+
+    cccam_emu_key_t *key = calloc(1, sizeof(cccam_emu_key_t));
+    if (!key) return;
+
+    key->type = type;
+    key->provider = provider;
+    key->key_index = key_index;
+    memcpy(key->data, data, data_len);
+    key->data_len = data_len;
+    key->next = g_emu_keys;
+    g_emu_keys = key;
+    g_emu_key_count++;
+}
+
+int cccam_emu_find_key(char type, uint32_t provider, const char *key_name,
+                       uint8_t key_index, uint8_t *key_out, size_t key_out_size) {
+    uint8_t index = key_index;
+    if (key_name && key_name[0] != '\0') {
+        index = (uint8_t)strtoul(key_name, NULL, 16);
+    }
+
+    cccam_emu_key_t *current = g_emu_keys;
+    while (current) {
+        if (current->type == type && current->provider == provider &&
+            current->key_index == index) {
+            if (key_out && key_out_size >= current->data_len) {
+                memcpy(key_out, current->data, current->data_len);
+                return current->data_len;
+            }
+            return 0;
+        }
+        current = current->next;
+    }
+    return 0;
+}
+
+// --- Parser de SoftCam.Key ---
+// Formato por linha:
+//   F <provider 6 hex> <keyindex hex> <keydata hex> [; comentário]
+//   I <provider 6 hex> <keyindex hex> <keydata hex>
+//   T <provider 6 hex> <keyindex hex> <keydata hex> <timestamp hex>
+//   F <provider 8 hex> 00 <keydata hex>   (formato antigo, índice embutido)
+
+static void emu_parse_line(char *line) {
+    char *p = line;
+    while (isspace((unsigned char)*p)) p++;
+
+    char *comment = strchr(p, ';');
+    if (comment) *comment = '\0';
+    comment = strchr(p, '#');
+    if (comment) *comment = '\0';
+
+    if (*p == '\0') return;
+
+    char type = (char)toupper((unsigned char)*p);
+    if (type != 'F' && type != 'I' && type != 'T') return;
+    p++;
+
+    char *tok_provider = strtok(p, " \t");
+    char *tok_index = strtok(NULL, " \t");
+    char *tok_data = strtok(NULL, " \t");
+    if (!tok_provider || !tok_index || !tok_data) return;
+
+    size_t prov_len = strlen(tok_provider);
+    if (prov_len != 6 && prov_len != 8) return;
+    for (size_t i = 0; i < prov_len; i++) {
+        if (!isxdigit((unsigned char)tok_provider[i])) return;
+    }
+
+    size_t idx_len = strlen(tok_index);
+    if (idx_len == 0 || idx_len > 2) return;
+    for (size_t i = 0; i < idx_len; i++) {
+        if (!isxdigit((unsigned char)tok_index[i])) return;
+    }
+
+    uint8_t data[CCCAM_EMU_MAX_KEY_DATA];
+    int data_len = hex_to_bin(tok_data, data, sizeof(data));
+    if (data_len <= 0) return;
+
+    uint32_t provider = (uint32_t)strtoul(tok_provider, NULL, 16);
+    uint8_t key_index = (uint8_t)strtoul(tok_index, NULL, 16);
+
+    if (prov_len == 8) {
+        // Provider de 32 bits (ex.: formato BISS "2600XXXX").
+        // Se o índice é 00, regista também sob o identificador de 24 bits
+        // com o índice embutido (formato antigo de chaves Viaccess).
+        emu_add_key(type, provider, key_index, data, (uint8_t)data_len);
+        if (key_index == 0 && (provider & 0xFF) != 0) {
+            emu_add_key(type, provider >> 8, (uint8_t)(provider & 0xFF),
+                        data, (uint8_t)data_len);
+        }
+    } else {
+        emu_add_key(type, provider, key_index, data, (uint8_t)data_len);
+    }
+}
+
+static int emu_load_key_file(const char *path) {
+    FILE *fp = fopen(path, "r");
+    if (!fp) {
+        cccam_log(LOG_WARN, "EMU: Ficheiro de chaves '%s' não encontrado", path);
+        return -1;
+    }
+
+    char line[1024];
+    int count = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+        int before = g_emu_key_count;
+        emu_parse_line(line);
+        if (g_emu_key_count != before) count++;
+    }
+
+    fclose(fp);
+    cccam_log(LOG_INFO, "EMU: %d chave(s) carregadas de '%s'", count, path);
+    return 0;
+}
+
+int cccam_emu_init(void) {
+    if (g_emu_initialized) return 0;
+
+    emu_free_keys();
+    g_emu_initialized = 1;
+
+    emu_load_key_file(g_emu_key_file);
+    cccam_log(LOG_INFO, "EMU: Motor de emulação inicializado (%d chaves)", g_emu_key_count);
+    return 0;
+}
+
+void cccam_emu_cleanup(void) {
+    emu_free_keys();
+    g_emu_initialized = 0;
+    cccam_log(LOG_INFO, "EMU: Motor de emulação limpo");
+}
+
+int cccam_emu_get_key_count(void) {
+    return g_emu_key_count;
+}
+
+// --- Dispatcher ---
+
+static int is_viaccess_caid(uint16_t caid) {
+    return (caid & 0xFF00) == 0x0500;
+}
+
+static int is_biss_caid(uint16_t caid) {
+    return caid == 0x2600 || caid == 0x2602;
+}
+
+static int is_cryptoworks_caid(uint16_t caid) {
+    return caid == 0x0D05 || caid == 0x0D03 || caid == 0x0D0C;
+}
+
+int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
+                     const uint8_t *ecm, uint16_t ecm_len, uint8_t *cw) {
+    if (!ecm || !cw || ecm_len == 0) {
+        return CCCAM_EMU_CORRUPT_DATA;
+    }
+
+    if (is_viaccess_caid(caid)) {
+        return cccam_emu_viaccess_ecm(ecm, ecm_len, cw);
+    }
+    if (is_biss_caid(caid)) {
+        return cccam_emu_biss_ecm(caid, sid, ecm, ecm_len, cw);
+    }
+    if (is_cryptoworks_caid(caid)) {
+        cccam_log(LOG_DEBUG, "EMU: Cryptoworks ainda não suportado (CAID %04X)", caid);
+        return CCCAM_EMU_NOT_SUPPORTED;
+    }
+
+    cccam_log(LOG_DEBUG, "EMU: Sistema CAID %04X não suportado", caid);
+    return CCCAM_EMU_NOT_SUPPORTED;
+}
+
+// --- BISS ---
+
+// BISS Mode 1: a CW é a própria chave (session word). O ECM não transporta
+// dados encriptados relevantes. As chaves são identificadas pelo SID.
+// Formatos aceites de provider no SoftCam.Key:
+//   1. "2600" + SID (ex.: F 26000001 00 <16 hex>)
+//   2. SID << 16 | 0x0001 (formato antigo)
+//   3. SID simples (ex.: F 00000001 00 <16 hex>)
+//   4. 0xA11FEED5 (chave "All Feeds")
+static int biss_find_session_word(uint16_t caid, uint16_t sid, uint8_t *sw) {
+    uint8_t key[16];
+    uint32_t providers[5];
+    int count = 0;
+
+    providers[count++] = (0x2600u << 16) | sid;
+    providers[count++] = ((uint32_t)sid << 16) | 0x0001;
+    providers[count++] = (uint32_t)sid;
+    providers[count++] = 0xA11FEED5;
+
+    for (int i = 0; i < count; i++) {
+        int len = cccam_emu_find_key('F', providers[i], NULL, 0, key, sizeof(key));
+        if (len == 8) {
+            memcpy(sw, key, 8);
+            return 0;
+        }
+        if (len == 16) {
+            memcpy(sw, key, 8);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int cccam_emu_biss_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
+                       uint16_t ecm_len, uint8_t *dw) {
+    (void)ecm;
+    (void)ecm_len;
+
+    uint8_t sw[8];
+    if (biss_find_session_word(caid, sid, sw) != 0) {
+        cccam_log(LOG_DEBUG, "EMU BISS: Chave não encontrada para SID %04X", sid);
+        return CCCAM_EMU_KEY_NOT_FOUND;
+    }
+
+    // A CW para o descrambler CSA é o session word repetido 2x
+    memcpy(dw, sw, 8);
+    memcpy(dw + 8, sw, 8);
+
+    cccam_log(LOG_DEBUG, "EMU BISS: CW obtida para SID %04X", sid);
+    return CCCAM_EMU_OK;
+}

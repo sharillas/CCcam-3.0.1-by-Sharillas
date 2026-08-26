@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libpcsclite-dev
+
+      - name: Build
+        run: |
+          make clean
+          make -j2
+
+      - name: Build with PC/SC
+        run: |
+          make clean
+          make -j2 USE_PCSC=1
+
+      - name: Self-tests
+        run: make test
+
+      - name: Smoke test (servidor arranca e responde na API)
+        run: |
+          cp conf/cccam3.users conf/cccam3.readers conf/cccam3.conf /tmp/
+          sed -i 's#^file = /var/log/cccam3.log#file = /tmp/cccam3.log#' /tmp/cccam3.conf
+          sed -i 's#^file = conf/cccam3.users#file = /tmp/cccam3.users#' /tmp/cccam3.conf
+          ./bin/cccam3 -c /tmp/cccam3.conf &
+          SERVER_PID=$!
+          sleep 2
+          curl -fsS http://localhost:8080/status | grep -q '"status": "online"' || { cat /tmp/cccam3.log; kill $SERVER_PID; exit 1; }
+          curl -fsS http://localhost:8080/stats | grep -q '"cache"' || { cat /tmp/cccam3.log; kill $SERVER_PID; exit 1; }
+          kill $SERVER_PID
+          wait $SERVER_PID 2>/dev/null || true
+          echo "Smoke test OK"

@@ -16,12 +16,15 @@ typedef struct cache_entry {
     time_t timestamp;
     time_t expires_at;
     int valid;
+    struct cache_entry *prev;
     struct cache_entry *next;
 } cache_entry_t;
 
 // --- Variáveis Globais da Cache ---
-
+// Lista ordenada por utilização: g_cache_head é o mais recente,
+// g_cache_tail é o menos recente (evicção LRU).
 static cache_entry_t *g_cache_head = NULL;
+static cache_entry_t *g_cache_tail = NULL;
 static int g_cache_entries = 0;
 static int g_cache_max_entries = CCCAM_CACHE_MAX_ENTRIES;
 static int g_cache_timeout = CCCAM_CACHE_DEFAULT_TIMEOUT;
@@ -31,16 +34,50 @@ static int g_cache_enabled = 1;
 
 // --- Funções Auxiliares Internas ---
 
-// Compara se duas entradas são iguais (mesmo CAID/Provid/SID)
 static int cache_match(cache_entry_t *entry, uint16_t caid, uint16_t provid, uint16_t sid) {
     if (!entry || !entry->valid) return 0;
     return (entry->caid == caid && entry->provid == provid && entry->sid == sid);
+}
+
+static void cache_unlink(cache_entry_t *entry) {
+    if (entry->prev) entry->prev->next = entry->next;
+    else g_cache_head = entry->next;
+    if (entry->next) entry->next->prev = entry->prev;
+    else g_cache_tail = entry->prev;
+    entry->prev = NULL;
+    entry->next = NULL;
+}
+
+// Move (ou coloca) a entrada no início da lista (mais recente)
+static void cache_move_to_head(cache_entry_t *entry) {
+    if (g_cache_head == entry) return;
+    cache_unlink(entry);
+    entry->next = g_cache_head;
+    if (g_cache_head) g_cache_head->prev = entry;
+    g_cache_head = entry;
+    if (!g_cache_tail) g_cache_tail = entry;
+}
+
+// Remove e liberta a entrada menos recente (cauda)
+static void cache_evict_lru(void) {
+    if (!g_cache_tail) return;
+    cache_entry_t *tail = g_cache_tail;
+    cache_unlink(tail);
+    free(tail);
+    g_cache_entries--;
+}
+
+static void cache_free_entry(cache_entry_t *entry) {
+    cache_unlink(entry);
+    free(entry);
+    g_cache_entries--;
 }
 
 // --- Implementação das Funções da API ---
 
 int cccam_cache_init(void) {
     g_cache_head = NULL;
+    g_cache_tail = NULL;
     g_cache_entries = 0;
     g_cache_hits = 0;
     g_cache_misses = 0;
@@ -63,6 +100,7 @@ void cccam_cache_cleanup(void) {
         current = next;
     }
     g_cache_head = NULL;
+    g_cache_tail = NULL;
     g_cache_entries = 0;
     g_cache_hits = 0;
     g_cache_misses = 0;
@@ -80,35 +118,26 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
         return 0;
     }
 
-    // Verifica se a cache já está cheia
-    if (g_cache_entries >= g_cache_max_entries) {
-        // Remove a entrada mais antiga (LRU - Least Recently Used)
-        cache_entry_t *oldest = g_cache_head;
-        cache_entry_t *prev = NULL;
-        cache_entry_t *iter = g_cache_head;
-        cache_entry_t *iter_prev = NULL;
-        
-        while (iter) {
-            if (iter->timestamp < oldest->timestamp) {
-                oldest = iter;
-                prev = iter_prev;
-            }
-            iter_prev = iter;
-            iter = iter->next;
+    // Substitui a entrada existente para o mesmo canal
+    cache_entry_t *current = g_cache_head;
+    while (current) {
+        if (cache_match(current, caid, provid, sid)) {
+            memcpy(current->cw, cw, 16);
+            current->hop = hop;
+            current->timestamp = time(NULL);
+            current->expires_at = expires_at > 0 ? expires_at : (time(NULL) + g_cache_timeout);
+            current->valid = 1;
+            cache_move_to_head(current);
+            return 0;
         }
-        
-        if (oldest) {
-            if (prev) {
-                prev->next = oldest->next;
-            } else {
-                g_cache_head = oldest->next;
-            }
-            free(oldest);
-            g_cache_entries--;
-        }
+        current = current->next;
     }
 
-    // Cria nova entrada
+    // Cache cheia: evicção LRU (entrada menos usada recentemente)
+    while (g_cache_entries >= g_cache_max_entries) {
+        cache_evict_lru();
+    }
+
     cache_entry_t *entry = malloc(sizeof(cache_entry_t));
     if (!entry) {
         cccam_log(LOG_ERROR, "CCshare: Falha ao alocar memória para cache");
@@ -123,10 +152,14 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
     entry->timestamp = time(NULL);
     entry->expires_at = expires_at > 0 ? expires_at : (time(NULL) + g_cache_timeout);
     entry->valid = 1;
-    
+    entry->prev = NULL;
+    entry->next = NULL;
+
     // Adiciona ao início da lista (mais recente)
     entry->next = g_cache_head;
+    if (g_cache_head) g_cache_head->prev = entry;
     g_cache_head = entry;
+    if (!g_cache_tail) g_cache_tail = entry;
     g_cache_entries++;
 
     cccam_log(LOG_DEBUG, "CCshare: Adicionada CW para CAID %04X SID %04X (hop %d, expira em %lds)", 
@@ -148,38 +181,31 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
 
     time_t now = time(NULL);
     cache_entry_t *current = g_cache_head;
-    cache_entry_t *prev = NULL;
 
     while (current) {
         if (cache_match(current, caid, provid, sid)) {
-            // Verifica se a entrada expirou
             if (now > current->expires_at) {
                 cccam_log(LOG_DEBUG, "CCshare: Entrada expirada para CAID %04X SID %04X", caid, sid);
-                // Remove a entrada expirada
-                if (prev) {
-                    prev->next = current->next;
-                } else {
-                    g_cache_head = current->next;
-                }
-                free(current);
-                g_cache_entries--;
+                cache_entry_t *expired = current;
+                current = current->next;
+                cache_free_entry(expired);
                 g_cache_misses++;
-                return 0; // Não encontrou (expirada)
+                return 0;
             }
             
-            // Encontrou! Copia a CW e o hop
             memcpy(cw, current->cw, 16);
             *hop = current->hop;
             g_cache_hits++;
             
+            // LRU: a entrada passa a ser a mais recente
+            cache_move_to_head(current);
+            
             cccam_log(LOG_DEBUG, "CCshare: HIT para CAID %04X SID %04X (hop %d)", caid, sid, *hop);
-            return 1; // Encontrou
+            return 1;
         }
-        prev = current;
         current = current->next;
     }
 
-    // Não encontrou
     g_cache_misses++;
     cccam_log(LOG_DEBUG, "CCshare: MISS para CAID %04X SID %04X", caid, sid);
     return 0;
@@ -187,48 +213,31 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
 
 int cccam_cache_remove(uint16_t caid, uint16_t provid, uint16_t sid) {
     cache_entry_t *current = g_cache_head;
-    cache_entry_t *prev = NULL;
-    int removed = 0;
 
     while (current) {
         if (cache_match(current, caid, provid, sid)) {
-            if (prev) {
-                prev->next = current->next;
-            } else {
-                g_cache_head = current->next;
-            }
-            free(current);
-            g_cache_entries--;
-            removed++;
+            cache_entry_t *removed = current;
+            current = current->next;
+            cache_free_entry(removed);
             cccam_log(LOG_DEBUG, "CCshare: Removida entrada para CAID %04X SID %04X", caid, sid);
-            break;
+            return 1;
         }
-        prev = current;
         current = current->next;
     }
 
-    return removed;
+    return 0;
 }
 
 int cccam_cache_clean_expired(void) {
-    cache_entry_t *current = g_cache_head;
-    cache_entry_t *prev = NULL;
     int removed = 0;
     time_t now = time(NULL);
+    cache_entry_t *current = g_cache_head;
 
     while (current) {
         cache_entry_t *next = current->next;
         if (now > current->expires_at) {
-            if (prev) {
-                prev->next = next;
-            } else {
-                g_cache_head = next;
-            }
-            free(current);
-            g_cache_entries--;
+            cache_free_entry(current);
             removed++;
-        } else {
-            prev = current;
         }
         current = next;
     }
@@ -250,6 +259,10 @@ void cccam_cache_set_timeout(int timeout_seconds) {
         g_cache_timeout = timeout_seconds;
         cccam_log(LOG_INFO, "CCshare: Cache timeout definido para %d segundos", timeout_seconds);
     }
+}
+
+int cccam_cache_get_timeout(void) {
+    return g_cache_timeout;
 }
 
 void cccam_cache_debug_print(void) {

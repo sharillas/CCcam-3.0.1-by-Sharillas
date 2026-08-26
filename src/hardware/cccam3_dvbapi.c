@@ -1,3 +1,7 @@
+// DVBAPI real (protocolo ca_pmt OSCam). O CCcam3 escuta no socket UNIX e os
+// descodificadores ligam-se a ele. Baseado no README.dvbapi_protocol e no
+// OSCam module-dvbapi.c (GPLv3).
+
 #include "cccam3_dvbapi.h"
 #include "cccam3_logger.h"
 #include "cccam3_ecm.h"
@@ -6,360 +10,485 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/ioctl.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
-#include <errno.h>
 #include <pthread.h>
+#include <time.h>
+
+#define DVBAPI_MAX_ECM_PIDS 8
+
+// --- Estado de um demux (canal em descodificação) ---
+typedef struct {
+    int used;
+    uint16_t sid;
+    uint16_t caid;
+    uint32_t provid;
+    uint16_t ecm_pid;
+    uint16_t video_pid;
+    uint16_t audio_pids[8];
+    int audio_pid_count;
+    time_t last_ecm;
+} dvbapi_demux_t;
+
+// --- Estado de uma ligação ---
+typedef struct {
+    int fd;
+    int alive;
+    dvbapi_demux_t demux;
+} dvbapi_client_t;
 
 // --- Variáveis Globais ---
-static int g_dvbapi_socket_fd = -1;
-static cccam_dvbapi_demux_t g_demux[DVBAPI_MAX_DEMUX];
-static int g_dvbapi_running = 0;
-static pthread_t g_dvbapi_thread;
+static int g_listen_fd = -1;
 static char g_socket_path[108] = DVBAPI_SOCKET_PATH;
+static int g_max_demux = DVBAPI_DEFAULT_MAX_DEMUX;
+static int g_running = 0;
+static pthread_t g_thread;
+static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+static dvbapi_client_t g_clients[DVBAPI_DEFAULT_MAX_DEMUX * 2];
 
 void cccam_dvbapi_set_socket_path(const char *path) {
     if (path && path[0] != '\0') {
         strncpy(g_socket_path, path, sizeof(g_socket_path) - 1);
         g_socket_path[sizeof(g_socket_path) - 1] = '\0';
-        cccam_log(LOG_INFO, "DVBAPI: Socket definido para %s", g_socket_path);
     }
 }
 
-// --- Funções Auxiliares ---
-
-// Converte CAID/SID para string legível
-static void dvbapi_log_info(uint16_t caid, uint16_t sid, char *buffer, size_t size) {
-    snprintf(buffer, size, "CAID %04X SID %04X", caid, sid);
+void cccam_dvbapi_set_max_demux(int max_demux) {
+    if (max_demux > 0 && max_demux <= 32) {
+        g_max_demux = max_demux;
+    }
 }
 
-// Inicializa um demux
-static void dvbapi_demux_init(int idx) {
-    memset(&g_demux[idx], 0, sizeof(cccam_dvbapi_demux_t));
-    g_demux[idx].fd = -1;
-    g_demux[idx].demux_id = idx;
-    g_demux[idx].enabled = 0;
-}
+// --- I/O ---
 
-// Procura um demux por CAID/SID
-static int dvbapi_demux_find(uint16_t caid, uint16_t sid) {
-    for (int i = 0; i < DVBAPI_MAX_DEMUX; i++) {
-        if (g_demux[i].enabled && g_demux[i].caid == caid && g_demux[i].sid == sid) {
-            return i;
+static int send_all(int fd, const void *data, size_t len) {
+    const char *p = (const char *)data;
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = write(fd, p + sent, len - sent);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
         }
+        if (n == 0) return -1;
+        sent += (size_t)n;
     }
-    return -1;
+    return 0;
 }
 
-// Procura um demux livre
-static int dvbapi_demux_find_free(void) {
-    for (int i = 0; i < DVBAPI_MAX_DEMUX; i++) {
-        if (!g_demux[i].enabled) {
-            return i;
+static int recv_all(int fd, uint8_t *buffer, size_t len) {
+    size_t received = 0;
+    while (received < len) {
+        ssize_t n = read(fd, buffer + received, len - received);
+        if (n <= 0) {
+            if (n < 0 && errno == EINTR) continue;
+            return -1;
         }
+        received += (size_t)n;
     }
-    return -1;
+    return 0;
 }
 
-// --- Parsing de Mensagens DVBAPI ---
+// --- Construção de pacotes de resposta ---
 
-// Parse de uma mensagem ECM recebida do socket
-static int dvbapi_parse_ecm(const uint8_t *buffer, size_t buf_len, 
-                            uint16_t *caid, uint16_t *sid, 
-                            uint8_t *ecm_data, uint16_t *ecm_len) {
-    if (!buffer || buf_len < 6) {
-        cccam_log(LOG_ERROR, "DVBAPI: ECM inválido (tamanho %zu)", buf_len);
+static void put_be32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)(v & 0xFF);
+}
+
+static void put_be16(uint8_t *p, uint16_t v) {
+    p[0] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)(v & 0xFF);
+}
+
+static uint16_t get_be16(const uint8_t *p) {
+    return (uint16_t)((p[0] << 8) | p[1]);
+}
+
+static uint32_t get_be32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | p[3];
+}
+
+// Envia CA_SET_DESCR (CW par + ímpar) para o descodificador
+static int dvbapi_send_descr(int fd, const uint8_t *cw) {
+    uint8_t packet[2 * (4 + 1 + 16)];
+    size_t off = 0;
+
+    for (int parity = 0; parity < 2; parity++) {
+        put_be32(packet + off, DVBAPI_CA_SET_DESCR);
+        off += 4;
+        packet[off++] = 0;                      // adapter index
+        put_be32(packet + off, 0);              // ca_descr.index
+        off += 4;
+        put_be32(packet + off, (uint32_t)parity); // ca_descr.parity (0=par, 1=ímpar)
+        off += 4;
+        memcpy(packet + off, cw + parity * 8, 8);
+        off += 8;
+    }
+
+    return send_all(fd, packet, off);
+}
+
+// Envia CA_SET_PID para um PID de stream
+static int dvbapi_send_pid(int fd, uint16_t pid, int32_t index) {
+    uint8_t packet[4 + 1 + 8];
+    put_be32(packet, DVBAPI_CA_SET_PID);
+    packet[4] = 0;                       // adapter index
+    put_be32(packet + 5, (uint32_t)pid); // ca_pid.pid (network byte order)
+    uint32_t idx = (uint32_t)index;
+    packet[9] = (uint8_t)(idx >> 24);
+    packet[10] = (uint8_t)(idx >> 16);
+    packet[11] = (uint8_t)(idx >> 8);
+    packet[12] = (uint8_t)(idx & 0xFF);
+
+    return send_all(fd, packet, sizeof(packet));
+}
+
+// Envia CA_SET_DESCR_MODE (DVBCSA/ECB)
+static int dvbapi_send_descr_mode(int fd) {
+    uint8_t packet[4 + 1 + 12];
+    put_be32(packet, DVBAPI_CA_SET_DESCR_MODE);
+    packet[4] = 0;                       // adapter index
+    put_be32(packet + 5, 0);             // index
+    put_be32(packet + 9, 0);             // algo = CA_ALGO_DVBCSA
+    put_be32(packet + 13, 0);            // cipher_mode = CA_MODE_ECB
+
+    return send_all(fd, packet, sizeof(packet));
+}
+
+// Pede ao descodificador para filtrar o PID de ECM
+static int dvbapi_send_set_filter(int fd, uint16_t ecm_pid) {
+    uint8_t packet[4 + 1 + 1 + 1 + 2 + 16 + 16 + 16 + 4 + 4];
+    size_t off = 0;
+
+    put_be32(packet + off, DVBAPI_DMX_SET_FILTER);
+    off += 4;
+    packet[off++] = 0;               // adapter index
+    packet[off++] = 0;               // demux index
+    packet[off++] = 0;               // filter number
+
+    // dmx_sct_filter_params
+    put_be16(packet + off, ecm_pid);
+    off += 2;
+    // filter: tabela 0x80/0x81 (par/ímpar)
+    memset(packet + off, 0, 16);
+    packet[off] = 0x80;
+    off += 16;
+    memset(packet + off, 0, 16);
+    packet[off] = 0xF0;
+    off += 16;
+    memset(packet + off, 0, 16);     // mode
+    off += 16;
+    put_be32(packet + off, 0);       // timeout
+    off += 4;
+    put_be32(packet + off, 0);       // flags
+    off += 4;
+
+    return send_all(fd, packet, off);
+}
+
+// --- Parsing do CA_PMT ---
+
+// O ca_pmt tem: [list_mgmt 1][program_number 2][version 1][prog_info_len 2(12 bits)]
+// seguido dos descritores do programa.
+static int dvbapi_parse_capmt(const uint8_t *data, size_t len, dvbapi_demux_t *demux) {
+    if (len < 6) return -1;
+
+    size_t pos = 0;
+    uint8_t list_mgmt = data[pos++];
+    (void)list_mgmt;
+    uint16_t sid = get_be16(data + pos);
+    pos += 2;
+    pos++; // version
+    uint16_t info_len = (uint16_t)(get_be16(data + pos) & 0x0FFF);
+    pos += 2;
+
+    if (pos + info_len > len) return -1;
+
+    memset(demux, 0, sizeof(*demux));
+    demux->used = 1;
+    demux->sid = sid;
+    demux->video_pid = 0;
+    demux->audio_pid_count = 0;
+
+    // Percorre os descritores do programa (CA 0x09, privado 0x81, ...)
+    size_t end = pos + info_len;
+    while (pos + 2 <= end) {
+        uint8_t tag = data[pos];
+        uint8_t dlen = data[pos + 1];
+        if (pos + 2 + dlen > end) break;
+
+        if (tag == 0x09 && dlen >= 4) {
+            // CA descriptor: caid + ecmpid
+            demux->caid = get_be16(data + pos + 2);
+            demux->ecm_pid = (uint16_t)(get_be16(data + pos + 4) & 0x1FFF);
+            if (dlen >= 6) {
+                demux->provid = ((uint32_t)data[pos + 6] << 16) |
+                                ((uint32_t)data[pos + 7] << 8) | data[pos + 8];
+            }
+        }
+        pos += 2 + dlen;
+    }
+
+    // Streams elementares (vídeo/áudio)
+    while (pos + 5 <= len) {
+        uint8_t stream_type = data[pos];
+        uint16_t es_pid = (uint16_t)(get_be16(data + pos + 1) & 0x1FFF);
+        uint16_t es_info_len = (uint16_t)(get_be16(data + pos + 3) & 0x0FFF);
+        pos += 5;
+        if (pos + es_info_len > len) break;
+
+        if (stream_type == 0x01 || stream_type == 0x02 || stream_type == 0x10 ||
+            stream_type == 0x1B || stream_type == 0x24 || stream_type == 0x42) {
+            if (demux->video_pid == 0) {
+                demux->video_pid = es_pid;
+            }
+        } else if ((stream_type >= 0x03 && stream_type <= 0x06) ||
+                   stream_type == 0x0F || stream_type == 0x11 || stream_type == 0x81) {
+            if (demux->audio_pid_count < 8) {
+                demux->audio_pids[demux->audio_pid_count++] = es_pid;
+            }
+        }
+        pos += es_info_len;
+    }
+
+    if (demux->ecm_pid == 0 || demux->caid == 0) {
+        cccam_log(LOG_WARN, "DVBAPI: CA_PMT sem ECM PID/CAID válidos (SID %04X)", sid);
         return -1;
     }
 
-    // Formato: [cmd] [caid] [sid] [ecm_data...]
-    uint8_t cmd = buffer[0];
-    if (cmd != 0x00) {
-        cccam_log(LOG_DEBUG, "DVBAPI: Comando não ECM: 0x%02X", cmd);
-        return -1; // Não é ECM
-    }
-
-    *caid = (buffer[1] << 8) | buffer[2];
-    *sid = (buffer[3] << 8) | buffer[4];
-    *ecm_len = buf_len - 5;
-    
-    if (*ecm_len > 256) {
-        cccam_log(LOG_WARN, "DVBAPI: ECM muito grande (%d bytes), truncando para 256", *ecm_len);
-        *ecm_len = 256;
-    }
-    memcpy(ecm_data, buffer + 5, *ecm_len);
-
+    demux->last_ecm = time(NULL);
+    cccam_log(LOG_INFO, "DVBAPI: Canal SID %04X CAID %04X ECM PID %04X vídeo %04X",
+              demux->sid, demux->caid, demux->ecm_pid, demux->video_pid);
     return 0;
 }
 
-// Constroi uma mensagem CW para enviar ao socket
-static int dvbapi_build_cw(uint8_t *buffer, size_t *buf_len, const uint8_t *cw) {
-    if (!buffer || !buf_len || !cw) return -1;
+// --- Thread de ligação ---
 
-    // Formato: [cmd] [cw_odd] [cw_even]
-    buffer[0] = 0x01; // Comando CW
-    memcpy(buffer + 1, cw, 16); // CW (16 bytes)
-    *buf_len = 17;
+static void *dvbapi_client_thread(void *arg) {
+    dvbapi_client_t *client = (dvbapi_client_t *)arg;
+    uint8_t buffer[DVBAPI_BUFFER_SIZE];
+    int fd = client->fd;
 
-    return 0;
-}
+    cccam_log(LOG_INFO, "DVBAPI: Descodificador ligado (fd %d)", fd);
 
-// --- Gestão do Socket DVBAPI ---
+    while (g_running) {
+        uint8_t opcode_hdr[4];
+        if (recv_all(fd, opcode_hdr, 4) != 0) {
+            break;
+        }
+        uint32_t opcode = get_be32(opcode_hdr);
 
-// Cria o socket e liga ao caminho
-static int dvbapi_socket_connect(void) {
-    struct sockaddr_un addr;
-    
-    // Fecha socket antigo se existir
-    if (g_dvbapi_socket_fd >= 0) {
-        close(g_dvbapi_socket_fd);
-        g_dvbapi_socket_fd = -1;
+        if ((opcode & 0xFFFFF000) == 0x9F803000) {
+            // CA_PMT / CA_STOP: comprimento no byte menos significativo
+            uint32_t data_len = opcode & 0x7F;
+            if (data_len > sizeof(buffer) || recv_all(fd, buffer, data_len) != 0) {
+                break;
+            }
+
+            if ((opcode & 0xFFFFFF00) == DVBAPI_AOT_CA_PMT) {
+                if (dvbapi_parse_capmt(buffer, data_len, &client->demux) == 0) {
+                    // Pede o filtro de ECM e associa os PIDs
+                    dvbapi_send_set_filter(fd, client->demux.ecm_pid);
+                    dvbapi_send_descr_mode(fd);
+                    if (client->demux.video_pid) {
+                        dvbapi_send_pid(fd, client->demux.video_pid, 0);
+                    }
+                    for (int i = 0; i < client->demux.audio_pid_count; i++) {
+                        dvbapi_send_pid(fd, client->demux.audio_pids[i], i + 1);
+                    }
+                }
+            } else if ((opcode & 0xFFFFFF00) == (DVBAPI_AOT_CA_STOP & 0xFFFFFF00)) {
+                memset(&client->demux, 0, sizeof(client->demux));
+                cccam_log(LOG_INFO, "DVBAPI: Descrambling parado (SID removido)");
+            }
+        } else if (opcode == DVBAPI_CLIENT_INFO) {
+            // [version 2][name_len 1][name]
+            uint8_t info_hdr[3];
+            if (recv_all(fd, info_hdr, 3) != 0) break;
+            uint32_t name_len = info_hdr[2];
+            if (name_len > sizeof(buffer) - 1) name_len = sizeof(buffer) - 1;
+            if (recv_all(fd, buffer, name_len) != 0) break;
+            buffer[name_len] = '\0';
+            cccam_log(LOG_INFO, "DVBAPI: Cliente: %s (protocolo v%d)",
+                      (char *)buffer, get_be16(info_hdr));
+
+            // Resposta SERVER_INFO: [opcode][version 2][name_len 1][name]
+            uint8_t reply[4 + 2 + 1 + 32];
+            size_t off = 0;
+            put_be32(reply + off, DVBAPI_SERVER_INFO);
+            off += 4;
+            put_be16(reply + off, DVBAPI_PROTOCOL_VERSION);
+            off += 2;
+            const char *srv_name = "CCcam3";
+            size_t srv_len = strlen(srv_name);
+            reply[off++] = (uint8_t)srv_len;
+            memcpy(reply + off, srv_name, srv_len);
+            off += srv_len;
+            send_all(fd, reply, off);
+        } else if (opcode == DVBAPI_FILTER_DATA) {
+            // [demux 1][filter 1][len 2 (12 bits)][dados]
+            uint8_t fhdr[4];
+            if (recv_all(fd, fhdr, 4) != 0) break;
+            uint32_t sec_len = (uint32_t)((fhdr[2] << 8 | fhdr[3]) & 0x0FFF);
+            if (sec_len > sizeof(buffer) || sec_len < 3) break;
+            if (recv_all(fd, buffer, sec_len) != 0) break;
+
+            // buffer = secção DVB completa (tabela 0x80/0x81)
+            if (!client->demux.used) continue;
+
+            cccam_ecm_request_t request;
+            memset(&request, 0, sizeof(request));
+            request.caid = client->demux.caid;
+            request.provid = (uint16_t)(client->demux.provid & 0xFFFF);
+            request.sid = client->demux.sid;
+            request.ecm_len = (uint16_t)sec_len;
+            if (request.ecm_len > CCCAM_ECM_MAX_SIZE) request.ecm_len = CCCAM_ECM_MAX_SIZE;
+            memcpy(request.ecm_data, buffer, request.ecm_len);
+            request.received_at = time(NULL);
+            request.client_id = 0;
+            request.hop = 0;
+
+            cccam_ecm_response_t response;
+            if (cccam_ecm_process(&request, &response) == 0 && response.found) {
+                dvbapi_send_descr(fd, response.cw);
+                client->demux.last_ecm = time(NULL);
+                cccam_log(LOG_DEBUG, "DVBAPI: CW enviada para SID %04X", client->demux.sid);
+            } else {
+                cccam_log(LOG_DEBUG, "DVBAPI: ECM falhou para SID %04X", client->demux.sid);
+            }
+        } else {
+            // Comando desconhecido: ignorar o payload se houver
+            cccam_log(LOG_DEBUG, "DVBAPI: Opcode desconhecido 0x%08X", opcode);
+            break;
+        }
     }
 
-    g_dvbapi_socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (g_dvbapi_socket_fd < 0) {
+    cccam_log(LOG_INFO, "DVBAPI: Descodificador desligado (fd %d)", fd);
+    close(fd);
+    client->fd = -1;
+    client->alive = 0;
+    return NULL;
+}
+
+// --- Thread principal ---
+
+static void *dvbapi_thread_func(void *arg) {
+    (void)arg;
+
+    g_listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (g_listen_fd < 0) {
         cccam_log(LOG_ERROR, "DVBAPI: Falha ao criar socket: %s", strerror(errno));
-        return -1;
+        return NULL;
     }
 
+    unlink(g_socket_path);
+
+    struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, g_socket_path, sizeof(addr.sun_path) - 1);
 
-    // Tenta ligar (tenta várias vezes se falhar)
-    int retry = 0;
-    int max_retries = 5;
-    while (retry < max_retries) {
-        if (connect(g_dvbapi_socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            cccam_log(LOG_INFO, "DVBAPI: Ligado ao socket %s", g_socket_path);
-            return 0;
-        }
-        cccam_log(LOG_WARN, "DVBAPI: Falha ao ligar ao socket %s (tentativa %d/%d): %s", 
-                  g_socket_path, retry + 1, max_retries, strerror(errno));
-        usleep(500000); // Aguarda 500ms
-        retry++;
+    if (bind(g_listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        cccam_log(LOG_ERROR, "DVBAPI: Falha ao bindar %s: %s", g_socket_path, strerror(errno));
+        close(g_listen_fd);
+        g_listen_fd = -1;
+        return NULL;
     }
 
-    cccam_log(LOG_ERROR, "DVBAPI: Falha ao ligar ao socket %s após %d tentativas", 
-              g_socket_path, max_retries);
-    close(g_dvbapi_socket_fd);
-    g_dvbapi_socket_fd = -1;
-    return -1;
-}
-
-// Fecha o socket
-static void dvbapi_socket_close(void) {
-    if (g_dvbapi_socket_fd >= 0) {
-        close(g_dvbapi_socket_fd);
-        g_dvbapi_socket_fd = -1;
-        cccam_log(LOG_INFO, "DVBAPI: Socket fechado");
+    if (listen(g_listen_fd, 8) < 0) {
+        cccam_log(LOG_ERROR, "DVBAPI: Falha ao escutar: %s", strerror(errno));
+        close(g_listen_fd);
+        g_listen_fd = -1;
+        return NULL;
     }
-}
 
-// --- Thread Principal da DVBAPI ---
+    cccam_log(LOG_INFO, "DVBAPI: À escuta em %s", g_socket_path);
 
-static void *dvbapi_thread_func(void *arg) {
-    (void)arg;
-    
-    uint8_t buffer[DVBAPI_BUFFER_SIZE];
-    fd_set read_fds;
-    int max_fd;
-
-    cccam_log(LOG_INFO, "DVBAPI: Thread iniciada");
-
-    while (g_dvbapi_running) {
-        // Verifica se o socket está ligado
-        if (g_dvbapi_socket_fd < 0) {
-            cccam_log(LOG_WARN, "DVBAPI: Socket não ligado, a tentar religar...");
-            if (dvbapi_socket_connect() != 0) {
-                sleep(2);
-                continue;
-            }
-        }
-
+    while (g_running) {
+        fd_set read_fds;
         FD_ZERO(&read_fds);
-        FD_SET(g_dvbapi_socket_fd, &read_fds);
-        max_fd = g_dvbapi_socket_fd;
+        FD_SET(g_listen_fd, &read_fds);
 
         struct timeval tv = {1, 0};
-        int activity = select(max_fd + 1, &read_fds, NULL, NULL, &tv);
-
+        int activity = select(g_listen_fd + 1, &read_fds, NULL, NULL, &tv);
         if (activity < 0) {
-            if (g_dvbapi_running) {
-                cccam_log(LOG_ERROR, "DVBAPI: Erro no select: %s", strerror(errno));
-            }
+            if (errno == EINTR) continue;
             break;
         }
+        if (!FD_ISSET(g_listen_fd, &read_fds)) continue;
 
-        if (activity > 0 && FD_ISSET(g_dvbapi_socket_fd, &read_fds)) {
-            ssize_t received = recv(g_dvbapi_socket_fd, buffer, sizeof(buffer), 0);
-            if (received > 0) {
-                // Parse do ECM
-                uint16_t caid, sid;
-                uint8_t ecm_data[256];
-                uint16_t ecm_len;
-                
-                if (dvbapi_parse_ecm(buffer, received, &caid, &sid, ecm_data, &ecm_len) == 0) {
-                    char info[32];
-                    dvbapi_log_info(caid, sid, info, sizeof(info));
-                    cccam_log(LOG_DEBUG, "DVBAPI: ECM recebido para %s", info);
+        int client_fd = accept(g_listen_fd, NULL, NULL);
+        if (client_fd < 0) continue;
 
-                    // --- Processar ECM ---
-                    cccam_ecm_request_t ecm_req;
-                    memset(&ecm_req, 0, sizeof(ecm_req));
-                    ecm_req.caid = caid;
-                    ecm_req.sid = sid;
-                    ecm_req.ecm_len = ecm_len;
-                    memcpy(ecm_req.ecm_data, ecm_data, ecm_len);
-                    ecm_req.received_at = time(NULL);
-                    ecm_req.client_id = 0; // Cliente local (DVBAPI)
-                    ecm_req.hop = 1;
-
-                    cccam_ecm_response_t ecm_resp;
-                    int result = cccam_ecm_process(&ecm_req, &ecm_resp);
-                    
-                    if (result == 0 && ecm_resp.found) {
-                        // --- Enviar CW ---
-                        uint8_t cw_buffer[32];
-                        size_t cw_len = sizeof(cw_buffer);
-                        if (dvbapi_build_cw(cw_buffer, &cw_len, ecm_resp.cw) == 0) {
-                            ssize_t sent = send(g_dvbapi_socket_fd, cw_buffer, cw_len, 0);
-                            if (sent == (ssize_t)cw_len) {
-                                cccam_log(LOG_DEBUG, "DVBAPI: CW enviada para %s", info);
-                            } else {
-                                cccam_log(LOG_ERROR, "DVBAPI: Falha ao enviar CW para %s", info);
-                            }
-                        }
-                    } else {
-                        cccam_log(LOG_WARN, "DVBAPI: Falha ao processar ECM para %s", info);
-                    }
-                }
-            } else if (received == 0) {
-                cccam_log(LOG_WARN, "DVBAPI: Ligação ao socket fechada pelo servidor");
-                dvbapi_socket_close();
-                // Tentar religar após um delay
-                sleep(1);
-            } else if (received < 0) {
-                if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                    cccam_log(LOG_ERROR, "DVBAPI: Erro ao receber dados: %s", strerror(errno));
-                    dvbapi_socket_close();
-                    sleep(1);
-                }
+        // Encontra um slot livre
+        pthread_mutex_lock(&g_lock);
+        dvbapi_client_t *slot = NULL;
+        for (int i = 0; i < (int)(sizeof(g_clients) / sizeof(g_clients[0])); i++) {
+            if (!g_clients[i].alive) {
+                slot = &g_clients[i];
+                break;
             }
         }
-
-        // Limpeza de demux expirados (a cada 30 segundos)
-        static time_t last_clean = 0;
-        time_t now = time(NULL);
-        if (now - last_clean > 30) {
-            for (int i = 0; i < DVBAPI_MAX_DEMUX; i++) {
-                if (g_demux[i].enabled && (now - g_demux[i].last_ecm) > 60) {
-                    g_demux[i].enabled = 0;
-                    cccam_log(LOG_DEBUG, "DVBAPI: Demux %d expirado (CAID %04X SID %04X)", 
-                              i, g_demux[i].caid, g_demux[i].sid);
-                }
-            }
-            last_clean = now;
+        if (slot) {
+            memset(slot, 0, sizeof(*slot));
+            slot->fd = client_fd;
+            slot->alive = 1;
+            pthread_t t;
+            pthread_create(&t, NULL, dvbapi_client_thread, slot);
+            pthread_detach(t);
+        } else {
+            cccam_log(LOG_WARN, "DVBAPI: Limite de ligações atingido");
+            close(client_fd);
         }
+        pthread_mutex_unlock(&g_lock);
     }
 
-    cccam_log(LOG_INFO, "DVBAPI: Thread terminada");
+    if (g_listen_fd >= 0) {
+        close(g_listen_fd);
+        g_listen_fd = -1;
+    }
+    unlink(g_socket_path);
+    cccam_log(LOG_INFO, "DVBAPI: Terminada");
     return NULL;
 }
 
 // --- Funções Públicas ---
 
 int cccam_dvbapi_init(void) {
-    cccam_log(LOG_INFO, "DVBAPI: Inicializando (modo Direto)");
+    memset(g_clients, 0, sizeof(g_clients));
+    g_running = 1;
 
-    // Inicializa demux
-    for (int i = 0; i < DVBAPI_MAX_DEMUX; i++) {
-        dvbapi_demux_init(i);
-    }
-
-    // Liga ao socket
-    if (dvbapi_socket_connect() != 0) {
-        cccam_log(LOG_WARN, "DVBAPI: Falha ao ligar ao socket (continuando em modo sem hardware)");
-        // Não retorna erro para permitir que o servidor continue sem hardware
-        return -1;
-    }
-
-    // Inicia thread
-    g_dvbapi_running = 1;
-    if (pthread_create(&g_dvbapi_thread, NULL, dvbapi_thread_func, NULL) != 0) {
+    if (pthread_create(&g_thread, NULL, dvbapi_thread_func, NULL) != 0) {
         cccam_log(LOG_ERROR, "DVBAPI: Falha ao criar thread: %s", strerror(errno));
-        dvbapi_socket_close();
+        g_running = 0;
         return -1;
     }
 
-    cccam_log(LOG_INFO, "DVBAPI: Inicializada com sucesso");
     return 0;
 }
 
 void cccam_dvbapi_cleanup(void) {
-    g_dvbapi_running = 0;
-    if (g_dvbapi_thread) {
-        pthread_join(g_dvbapi_thread, NULL);
-        g_dvbapi_thread = 0;
-    }
-    dvbapi_socket_close();
-    cccam_log(LOG_INFO, "DVBAPI: Limpeza concluída");
-}
+    g_running = 0;
 
-int cccam_dvbapi_send(const uint8_t *data, size_t len) {
-    if (g_dvbapi_socket_fd < 0) {
-        cccam_log(LOG_ERROR, "DVBAPI: Socket não ligado");
-        return -1;
-    }
-    ssize_t sent = write(g_dvbapi_socket_fd, data, len);
-    if (sent != (ssize_t)len) {
-        cccam_log(LOG_ERROR, "DVBAPI: Falha ao enviar dados (%zd de %zu): %s", 
-                  sent, len, strerror(errno));
-        return -1;
-    }
-    return 0;
-}
-
-int cccam_dvbapi_recv(uint8_t *buffer, size_t buf_len) {
-    if (g_dvbapi_socket_fd < 0) {
-        cccam_log(LOG_ERROR, "DVBAPI: Socket não ligado");
-        return -1;
-    }
-    ssize_t received = read(g_dvbapi_socket_fd, buffer, buf_len);
-    if (received < 0) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            cccam_log(LOG_ERROR, "DVBAPI: Falha ao receber dados: %s", strerror(errno));
+    pthread_mutex_lock(&g_lock);
+    for (int i = 0; i < (int)(sizeof(g_clients) / sizeof(g_clients[0])); i++) {
+        if (g_clients[i].alive && g_clients[i].fd >= 0) {
+            close(g_clients[i].fd);
+            g_clients[i].fd = -1;
+            g_clients[i].alive = 0;
         }
-        return -1;
     }
-    return (int)received;
-}
+    pthread_mutex_unlock(&g_lock);
 
-int cccam_dvbapi_write_cw(uint16_t caid, uint16_t sid, const uint8_t *cw) {
-    if (!cw) {
-        cccam_log(LOG_ERROR, "DVBAPI: CW nula recebida");
-        return -1;
+    if (g_thread) {
+        pthread_join(g_thread, NULL);
+        g_thread = 0;
     }
-    if (g_dvbapi_socket_fd < 0) {
-        cccam_log(LOG_ERROR, "DVBAPI: Socket não ligado");
-        return -1;
-    }
-
-    // Constrói e envia a CW
-    uint8_t buffer[32];
-    size_t buf_len = sizeof(buffer);
-    if (dvbapi_build_cw(buffer, &buf_len, cw) != 0) {
-        cccam_log(LOG_ERROR, "DVBAPI: Falha ao construir CW");
-        return -1;
-    }
-
-    char cw_hex[33];
-    for (int i = 0; i < 16; i++) {
-        sprintf(cw_hex + (i * 2), "%02x", cw[i]);
-    }
-    cccam_log(LOG_DEBUG, "DVBAPI: A enviar CW para CAID %04X SID %04X: %s", caid, sid, cw_hex);
-
-    return cccam_dvbapi_send(buffer, buf_len);
+    cccam_log(LOG_INFO, "DVBAPI: Limpeza concluída");
 }

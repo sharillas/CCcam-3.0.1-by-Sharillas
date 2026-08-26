@@ -23,20 +23,26 @@
 
 | Característica | Estado | Notas |
 |:---|:---:|:---|
-| Protocolo CCcam 2.0.9+ | ✅ | Compatível com clientes antigos |
-| Protocolo Newcamd | ✅ | Suporte a clientes Newcamd |
+| Protocolo CCcam (próprio) | ✅ | Servidor multi-cliente com wire format próprio |
+| Protocolo Newcamd real | ✅ | newcs/cs357x (NCD_524): login DES, MD5-crypt, ECM |
 | Encriptação RC4 | ✅ | Modo padrão para compatibilidade |
-| Encriptação AES-256 | ✅ | Suporte a 128/256 bits |
+| Encriptação AES-256 | ✅ | Suporte a 128/192/256 bits |
 | Encriptação 3DES | ✅ | Modo de segurança adicional |
-| Encriptação AES-GCM | ✅ | Modo autenticado (confidencialidade + integridade) |
-| Troca de chaves RSA | ✅ | Handshake seguro com RSA 2048 bits |
-| Cache de CWs | ✅ | Reduz latência no zapping |
-| DVB-API / STAPI | ✅ | Interface com hardware |
+| Encriptação AES-GCM | ✅ | Tráfego autenticado (confidencialidade + integridade) |
+| Criptografia por sessão | ✅ | Chave única por cliente (sem estado global) |
+| Handshake seguro | ✅ | PBKDF2-HMAC-SHA256 + AES-GCM (modo moderno), SHA1 (legado) |
+| EMU real (SoftCam.Key) | ✅ | Viaccess (Via 1/2.6/3 + HD) e BISS |
+| Leitor local de cartões | ✅ | Smartcards reais via PC/SC (Seca, Conax) |
+| Leitores remotos reais | ✅ | TCP com sessão encriptada, timeout e backoff |
+| Cache de CWs | ✅ | LRU verdadeiro com timeout configurável |
+| DVB-API (ca_pmt OSCam) | ✅ | UNIX socket com CA_PMT/CA_SET_DESCR reais |
+| STAPI | ✅ | libstapi.so do STLinux (dlopen) |
+| Leitor DVB direto | ✅ | S/S2/C/C2: PAT/SDT/PMT + descrambler |
 | Logging configurável | ✅ | Múltiplos níveis (ERROR, WARN, INFO, DEBUG, TRACE) |
-| Gestão de utilizadores | ✅ | Níveis de acesso e limites de hops por utilizador |
-| API REST | ✅ | Monitorização e gestão remota |
+| Gestão de utilizadores | ✅ | Níveis de acesso, limites de hops, auto-registo opcional |
+| API REST | ✅ | Monitorização com autenticação Basic opcional |
 | Interface Web | ✅ | Painel de controlo visual |
-| Optimizer | ✅ | Gestão de memória, timeouts, failover e balanceamento de carga |
+| CI | ✅ | Compilação + testes automáticos em cada push |
 | Documentação | ✅ | Guias de instalação e API |
 
 ---
@@ -58,16 +64,22 @@ cccam3/
 | | +-- cccam3_handshake_advanced.c
 | | +-- cccam3_crypto.c
 | | +-- cccam3_crypto_advanced.c
-| | +-- cccam3_protocol_newcamd.c
+| | +-- cccam3_newcamd.c          # servidor Newcamd real (newcs/cs357x)
 | +-- hardware/
-| | +-- cccam3_dvbapi.c
-| | +-- cccam3_stapi.c
+| | +-- cccam3_dvbapi.c           # ca_pmt OSCam (UNIX socket)
+| | +-- cccam3_stapi.c            # libstapi.so (dlopen)
+| | +-- cccam3_dvb.c
+| | +-- cccam3_smartcard.c        # leitor local via PC/SC
 | +-- CCshare/
 | | +-- cccam3_cache.c
 | | +-- cccam3_ecm.c
 | | +-- cccam3_card_manager.c
 | | +-- cccam3_hop_control.c
 | | +-- cccam3_user_manager.c
+| | +-- cccam3_emu.c              # EMU: SoftCam.Key + BISS
+| | +-- cccam3_emu_des.c          # DES Viaccess/Newcamd
+| | +-- cccam3_emu_viaccess.c     # Viaccess Via 1/2.6/3 + HD
+| | +-- cccam3_emu_viaccess_tables.c
 | +-- api/
 | +-- cccam3_rest_api.c
 | +-- cccam3_web_interface.c
@@ -78,6 +90,7 @@ cccam3/
 | +-- cccam3.conf
 | +-- cccam3.users
 | +-- cccam3.readers
+| +-- SoftCam.Key
 +-- docs/
 | +-- API.md
 | +-- INSTALL.md
@@ -92,18 +105,18 @@ cccam3/
 | Modo | Algoritmo | Tamanho da Chave | Estado |
 |:---|:---|:---:|:---|
 | `NONE` | Sem encriptação | - | ⚠️ Apenas para debug |
-| `RC4` | RC4-like | 20 bytes | ✅ Estável |
-| `AES` | AES-256 | 32 bytes | ✅ Estável |
+| `RC4` | RC4 | 20 bytes | ✅ Estável |
+| `AES` | AES (ECB) | 16/24/32 bytes | ✅ Estável |
 | `3DES` | Triple DES | 24 bytes | ✅ Estável |
-| `AES-GCM` | AES com autenticação | 32 bytes | ✅ Estável |
-| `RSA` | RSA + AES-GCM | 2048 bits | ✅ Estável |
+| `AES-GCM` | AES com autenticação | 16/24/32 bytes | ✅ Estável (tráfego autenticado) |
 
 ### Handshake de Autenticação
 
 1. Cliente envia **seed** de 16 bytes + credenciais
 2. Servidor responde com **seed** de 16 bytes
-3. Chave derivada de: `SHA1(client_seed + server_seed + password)` (legado) ou **RSA + AES-GCM** (moderno)
-4. Toda a comunicação posterior é encriptada
+3. Chave derivada de: `SHA1(client_seed + server_seed + password)` (legado) ou **PBKDF2-HMAC-SHA256** (moderno, 10000 iterações, sal = client_seed + server_seed)
+4. No modo moderno o servidor autentica-se com um tag AES-GCM sobre a seed
+5. Toda a comunicação posterior é encriptada com a chave de sessão (única por cliente)
 
 ---
 
@@ -183,8 +196,17 @@ Ative o Newcamd no conf/cccam3.conf:
 [newcamd]
 enabled = 1
 port = 34000
+caid = 0500
+key = 0102030405060708090a0b0c0d0e
 ```
+
 Configure os clientes Newcamd para apontarem para o servidor na porta 34000.
+A linha CWS do cliente tem de usar a mesma chave DES (os últimos 14 bytes):
+`CWS = servidor 34000 user pass 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e`
+
+Emulação (SoftCam.Key)
+Para canais Viaccess ou BISS, ative um leitor EMU no conf/cccam3.readers e
+coloque as chaves no ficheiro definido em `[emu] key_file`.
 
 API REST
 # Status do servidor

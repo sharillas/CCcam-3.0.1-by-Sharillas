@@ -9,6 +9,12 @@
 
 // --- Funções ---
 
+// Define a autenticação HTTP Basic (vazio = desativada). Chamar antes do init.
+void cccam_rest_api_set_auth(const char *user, const char *password);
+
+// Define o caminho da interface web (por omissão /web)
+void cccam_rest_api_set_web_path(const char *path);
+
 // Inicializa a API REST
 int cccam_rest_api_init(int port);
 

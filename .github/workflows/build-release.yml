@@ -91,7 +91,7 @@ jobs:
       - name: Build CCcam3
         run: |
           make clean
-          make CC=${{ matrix.cc }} CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -I$OPENSSL_PREFIX/include ${{ matrix.cflags }} -no-pie" LDFLAGS="-L$OPENSSL_PREFIX/lib -static -lssl -lcrypto -lm -lpthread"
+          make CC=${{ matrix.cc }} CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -I$OPENSSL_PREFIX/include ${{ matrix.cflags }} -no-pie" LDFLAGS="-L$OPENSSL_PREFIX/lib -static -lssl -lcrypto -lm -lpthread -ldl"
           file bin/cccam3
           cp bin/cccam3 cccam3-${{ matrix.name }}
           chmod +x cccam3-${{ matrix.name }}

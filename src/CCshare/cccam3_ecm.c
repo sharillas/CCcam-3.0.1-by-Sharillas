@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
 
 // --- Variáveis Globais ---
 static int g_ecm_total_requests = 0;
@@ -29,8 +30,7 @@ static void ecm_log_info(uint16_t caid, uint16_t provid, uint16_t sid, char *buf
 static int ecm_is_valid(cccam_ecm_request_t *request) {
     if (!request) return 0;
     if (request->ecm_len == 0 || request->ecm_len > CCCAM_ECM_MAX_SIZE) return 0;
-    if (request->caid == 0) return 0;
-    if (request->sid == 0) return 0;
+    if (request->caid == 0 && request->sid == 0) return 0;
     return 1;
 }
 
@@ -66,7 +66,7 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
     
     char info[64];
     ecm_log_info(request->caid, request->provid, request->sid, info, sizeof(info));
-    cccam_log(LOG_DEBUG, "CCshare: Processando ECM %s (hop %d)", info, request->hop);
+    cccam_log(LOG_DEBUG, "CCshare: Processando ECM %s (hop máximo do cliente: %d)", info, request->hop);
 
     // Inicializa resposta
     memset(response, 0, sizeof(cccam_ecm_response_t));
@@ -74,85 +74,75 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
     response->caid = request->caid;
     response->provid = request->provid;
     response->sid = request->sid;
-    response->hop = request->hop;
     response->generated_at = time(NULL);
 
-    // --- PASSO 0: Verificar Hop ---
-    if (!cccam_hop_control_check(request->caid, request->provid, request->sid, 
-                                  request->hop, request->client_id)) {
-        cccam_log(LOG_WARN, "CCshare: ECM %s - HOP BLOQUEADO (hop %d)", info, request->hop);
-        response->found = 0;
-        return -1; // Bloqueado por hop
-    }
-
-    // Registar o pedido para controlo de hops
-    cccam_hop_control_register(request->caid, request->provid, request->sid,
-                                request->hop, request->client_id);
-
     // --- PASSO 1: Verificar na Cache ---
-    uint8_t hop_out;
+    uint8_t source_hop = 0;
     if (cccam_cache_find(request->caid, request->provid, request->sid, 
-                         response->cw, &hop_out) == 1) {
+                         response->cw, &source_hop) == 1) {
+        // O hop que o cliente recebe é o hop da origem + 1
+        uint8_t served_hop = cccam_hop_control_increment_hop(source_hop);
+        if (!cccam_hop_control_check(request->caid, request->provid, request->sid,
+                                     served_hop, request->client_id) ||
+            (request->hop != 0 && served_hop > request->hop)) {
+            cccam_log(LOG_WARN, "CCshare: ECM %s - HOP BLOQUEADO (servir hop %d, limite do cliente %d)",
+                      info, served_hop, request->hop);
+            response->found = 0;
+            return -1;
+        }
         response->found = 1;
-        response->hop = hop_out;
+        response->hop = served_hop;
         g_ecm_cache_hits++;
-        cccam_log(LOG_DEBUG, "CCshare: ECM %s - CACHE HIT (hop %d)", info, hop_out);
-        return 0; // Sucesso, CW encontrada na cache
+        cccam_log(LOG_DEBUG, "CCshare: ECM %s - CACHE HIT (hop %d)", info, served_hop);
+        return 0;
     }
     g_ecm_cache_misses++;
 
     // --- PASSO 2: Pedir ao Card Manager ---
     uint8_t cw[CCCAM_CW_SIZE];
-    uint8_t hop_reader;
     uint32_t reader_id;
     
     int reader_result = cccam_card_manager_get_cw(
         request->caid, request->provid, request->sid,
         request->ecm_data, request->ecm_len,
-        cw, &hop_reader, &reader_id
+        cw, &source_hop, &reader_id
     );
 
     if (reader_result == 0) {
-        // Sucesso! CW obtida do leitor
+        uint8_t served_hop = cccam_hop_control_increment_hop(source_hop);
+        if (!cccam_hop_control_check(request->caid, request->provid, request->sid,
+                                     served_hop, request->client_id) ||
+            (request->hop != 0 && served_hop > request->hop)) {
+            cccam_log(LOG_WARN, "CCshare: ECM %s - HOP BLOQUEADO (servir hop %d, limite do cliente %d)",
+                      info, served_hop, request->hop);
+            response->found = 0;
+            return -1;
+        }
+
         memcpy(response->cw, cw, CCCAM_CW_SIZE);
         response->found = 1;
-        response->hop = hop_reader;
+        response->hop = served_hop;
         g_ecm_reader_success++;
         
-        // Guarda na cache para futuras utilizações
-        time_t expires_at = time(NULL) + 60; // 60 segundos de validade
+        // Guarda na cache com o hop da origem (0 = usar timeout configurado)
         cccam_cache_add(request->caid, request->provid, request->sid, 
-                        cw, hop_reader, expires_at);
+                        cw, source_hop, 0);
         
         cccam_log(LOG_DEBUG, "CCshare: ECM %s - READER SUCCESS (hop %d, reader %u)", 
-                  info, hop_reader, reader_id);
+                  info, served_hop, reader_id);
         return 0;
-    } else {
-        // Falha ao obter CW do leitor
-        g_ecm_reader_fail++;
-        response->found = 0;
-        cccam_log(LOG_WARN, "CCshare: ECM %s - READER FAIL (código %d)", info, reader_result);
-        return -1; // Falha
     }
-}
 
-// --- Função para obter CW do leitor (agora usa o Card Manager) ---
-int cccam_ecm_get_cw_from_reader(uint16_t caid, uint16_t provid, uint16_t sid,
-                                  const uint8_t *ecm_data, uint16_t ecm_len,
-                                  uint8_t *cw, uint8_t *hop) {
-    if (!cw || !hop) {
-        return -1;
-    }
-    
-    // Usa o Card Manager para obter a CW
-    uint32_t reader_id;
-    int result = cccam_card_manager_get_cw(caid, provid, sid, ecm_data, ecm_len, 
-                                            cw, hop, &reader_id);
-    return result;
+    // Falha ao obter CW do leitor
+    g_ecm_reader_fail++;
+    response->found = 0;
+    cccam_log(LOG_WARN, "CCshare: ECM %s - READER FAIL (código %d)", info, reader_result);
+    return -1;
 }
 
 // --- Função para enviar CW ao cliente ---
-int cccam_ecm_send_cw(int client_fd, const cccam_ecm_response_t *response) {
+int cccam_ecm_send_cw(int client_fd, const cccam_crypto_ctx_t *crypto,
+                      const cccam_ecm_response_t *response) {
     if (!response || client_fd < 0) {
         cccam_log(LOG_ERROR, "CCshare: send_cw - parâmetros inválidos");
         return -1;
@@ -176,18 +166,22 @@ int cccam_ecm_send_cw(int client_fd, const cccam_ecm_response_t *response) {
     cw_msg.provid = response->provid;
     cw_msg.sid = response->sid;
     
-    if (cccam_protocol_build_cw(buffer, &buf_len, &cw_msg) != 0) {
+    if (cccam_protocol_build_cw(buffer, &buf_len, &cw_msg, crypto) != 0) {
         cccam_log(LOG_ERROR, "CCshare: Falha ao construir mensagem CW para CAID %04X", 
                   response->caid);
         return -1;
     }
     
-    // Envia para o cliente
-    ssize_t sent = write(client_fd, buffer, buf_len);
-    if (sent != (ssize_t)buf_len) {
-        cccam_log(LOG_ERROR, "CCshare: Falha ao enviar CW para cliente (enviado %zd de %zu)", 
-                  sent, buf_len);
-        return -1;
+    // Envia para o cliente (trata escritas parciais)
+    size_t sent_total = 0;
+    while (sent_total < buf_len) {
+        ssize_t sent = write(client_fd, buffer + sent_total, buf_len - sent_total);
+        if (sent < 0) {
+            if (errno == EINTR) continue;
+            cccam_log(LOG_ERROR, "CCshare: Falha ao enviar CW para cliente (%s)", strerror(errno));
+            return -1;
+        }
+        sent_total += (size_t)sent;
     }
     
     char cw_hex[33];

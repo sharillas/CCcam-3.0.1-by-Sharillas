@@ -4,11 +4,17 @@
 #include <stdint.h>
 #include <stddef.h>
 
+// --- STAPI (STMicroelectronics) ---
+// Injeção de CWs via libstapi.so (STLinux). Sem a biblioteca ou sem
+// hardware ST, as funções devolvem erro (não há dados simulados).
+
+// Define o caminho do dispositivo STAPI (antes do init)
+void cccam_stapi_set_device(const char *device);
+
 int cccam_stapi_init(void);
 void cccam_stapi_cleanup(void);
+
+// Injeta uma CW (16 bytes: par + ímpar) no descrambler
 int cccam_stapi_write_cw(uint16_t caid, uint16_t sid, const uint8_t *cw);
-int cccam_stapi_get_ecm(uint16_t *caid, uint16_t *sid, uint8_t *ecm_data, uint16_t *ecm_len);
-int cccam_stapi_send(const uint8_t *data, size_t len);
-int cccam_stapi_recv(uint8_t *buffer, size_t buf_len);
 
 #endif // CCCAM3_STAPI_H

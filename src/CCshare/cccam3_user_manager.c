@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <errno.h>
 #include <openssl/sha.h>
 
 // --- Variáveis Globais ---
@@ -13,15 +14,31 @@ static int g_user_count = 0;
 static uint32_t g_next_user_id = 1;
 static int g_initialized = 0;
 static char g_users_file[256] = "conf/cccam3.users";
+static int g_auto_register = 0;
+
+void cccam_user_manager_set_auto_register(int enabled) {
+    g_auto_register = enabled ? 1 : 0;
+    if (g_auto_register) {
+        cccam_log(LOG_WARN, "CCshare: Registo automático de utilizadores ATIVADO");
+    }
+}
+
+int cccam_user_manager_auto_register_enabled(void) {
+    return g_auto_register;
+}
 
 // --- Funções Auxiliares ---
 
-// Hash SHA256 da password (representação hexadecimal)
-static void password_hash(const char *password, char *hash_out) {
+// Hash SHA256 da password (representação hexadecimal, 64 caracteres + NUL)
+static void password_hash(const char *password, char *hash_out, size_t hash_out_size) {
     uint8_t digest[SHA256_DIGEST_LENGTH];
     SHA256((const unsigned char *)password, strlen(password), digest);
+    if (hash_out_size < SHA256_DIGEST_LENGTH * 2 + 1) {
+        if (hash_out_size > 0) hash_out[0] = '\0';
+        return;
+    }
     for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-        sprintf(hash_out + (i * 2), "%02x", digest[i]);
+        snprintf(hash_out + (i * 2), 3, "%02x", digest[i]);
     }
     hash_out[SHA256_DIGEST_LENGTH * 2] = '\0';
 }
@@ -102,7 +119,10 @@ int cccam_user_manager_add_user(const char *username, const char *password,
     
     user->id = generate_user_id();
     strncpy(user->username, username, CCCAM_MAX_USERNAME - 1);
-    password_hash(password, user->password_hash);
+    user->username[CCCAM_MAX_USERNAME - 1] = '\0';
+    password_hash(password, user->password_hash, sizeof(user->password_hash));
+    strncpy(user->password, password, CCCAM_MAX_PASSWORD - 1);
+    user->password[CCCAM_MAX_PASSWORD - 1] = '\0';
     user->level = level;
     user->max_hops = max_hops;
     user->enabled = 1;
@@ -163,8 +183,8 @@ int cccam_user_manager_authenticate(const char *username, const char *password,
         return -2;
     }
     
-    char hash[64];
-    password_hash(password, hash);
+    char hash[SHA256_DIGEST_LENGTH * 2 + 1];
+    password_hash(password, hash, sizeof(hash));
     
     if (strcmp(user->password_hash, hash) == 0) {
         user->last_login = time(NULL);
@@ -190,6 +210,64 @@ cccam_user_t *cccam_user_manager_get_user(const char *username) {
         current = current->next;
     }
     return NULL;
+}
+
+// Verifica se o nome é seguro para guardar no ficheiro de utilizadores
+static int valid_username(const char *username) {
+    if (!username || username[0] == '\0') return 0;
+    for (const char *p = username; *p; p++) {
+        if (!(isalnum((unsigned char)*p) || *p == '.' || *p == '_' || *p == '-')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// Verifica se a password é segura para guardar no ficheiro (sem quebras de linha)
+static int valid_password(const char *password) {
+    if (!password || password[0] == '\0') return 0;
+    for (const char *p = password; *p; p++) {
+        if (*p == '\n' || *p == '\r') return 0;
+    }
+    return 1;
+}
+
+int cccam_user_manager_auto_register(const char *username, const char *password,
+                                     cccam_user_t **user_out) {
+    if (!valid_username(username) || !valid_password(password)) {
+        cccam_log(LOG_WARN, "CCshare: Auto-registo recusado (nome/password inválidos)");
+        return -1;
+    }
+
+    if (strlen(username) >= CCCAM_MAX_USERNAME || strlen(password) >= CCCAM_MAX_PASSWORD) {
+        cccam_log(LOG_WARN, "CCshare: Auto-registo recusado (nome/password demasiado longos)");
+        return -1;
+    }
+
+    cccam_user_t *user = cccam_user_manager_get_user(username);
+    if (user) {
+        cccam_log(LOG_WARN, "CCshare: Auto-registo: utilizador '%s' já existe", username);
+        return -2;
+    }
+
+    if (cccam_user_manager_add_user(username, password, USER_LEVEL_USER, 2) != 0) {
+        return -1;
+    }
+
+    // Persiste no ficheiro de utilizadores
+    FILE *fp = fopen(g_users_file, "a");
+    if (fp) {
+        fprintf(fp, "\n[%s]\npassword = %s\nlevel = %d\nmax_hops = %d\n",
+                username, password, (int)USER_LEVEL_USER, 2);
+        fclose(fp);
+        cccam_log(LOG_INFO, "CCshare: Utilizador '%s' registado e persistido", username);
+    } else {
+        cccam_log(LOG_WARN, "CCshare: Não foi possível persistir o utilizador '%s' em %s: %s",
+                  username, g_users_file, strerror(errno));
+    }
+
+    if (user_out) *user_out = cccam_user_manager_get_user(username);
+    return 0;
 }
 
 cccam_user_t *cccam_user_manager_get_user_by_id(uint32_t id) {
