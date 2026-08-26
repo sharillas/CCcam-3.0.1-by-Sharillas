@@ -20,7 +20,10 @@ jobs:
       - name: Build
         run: |
           make clean
-          make -j2
+          if ! make -j2 2>&1 | tee /tmp/build.log; then
+            tail -n 50 /tmp/build.log | sed 's/^/::error::/'
+            exit 1
+          fi
 
       - name: Build with PC/SC
         run: |
