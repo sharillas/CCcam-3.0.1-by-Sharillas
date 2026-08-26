@@ -46,21 +46,24 @@ void cccam_log(int level, const char *format, ...) {
     va_list args;
     va_start(args, format);
 
+    // Cópia ANTES de consumir args (o va_copy após o uso é UB)
+    va_list args_copy;
+    if (g_log_file) {
+        va_copy(args_copy, args);
+    }
+
     FILE *out = (level <= LOG_ERROR) ? stderr : stdout;
     fprintf(out, "[%s] [%-5s] ", time_str, level_name);
     vfprintf(out, format, args);
     fprintf(out, "\n");
     fflush(out);
+    va_end(args);
 
     if (g_log_file) {
-        va_list args_copy;
-        va_copy(args_copy, args);
         fprintf(g_log_file, "[%s] [%-5s] ", time_str, level_name);
         vfprintf(g_log_file, format, args_copy);
         fprintf(g_log_file, "\n");
         fflush(g_log_file);
         va_end(args_copy);
     }
-
-    va_end(args);
 }
