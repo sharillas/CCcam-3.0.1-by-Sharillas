@@ -34,7 +34,11 @@ jobs:
           fi
 
       - name: Self-tests
-        run: make test
+        run: |
+          if ! make test 2>&1 | tee /tmp/test.log; then
+            tail -n 50 /tmp/test.log | sed 's/^/::error::/'
+            exit 1
+          fi
 
       - name: Smoke test (servidor arranca e responde na API)
         run: |
