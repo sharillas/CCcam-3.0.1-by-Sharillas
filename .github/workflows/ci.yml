@@ -42,14 +42,29 @@ jobs:
 
       - name: Smoke test (servidor arranca e responde na API)
         run: |
-          cp conf/cccam3.users conf/cccam3.readers conf/cccam3.conf /tmp/
+          cp conf/cccam3.users conf/cccam3.readers conf/cccam3.conf conf/SoftCam.Key /tmp/
           sed -i 's#^file = /var/log/cccam3.log#file = /tmp/cccam3.log#' /tmp/cccam3.conf
           sed -i 's#^file = conf/cccam3.users#file = /tmp/cccam3.users#' /tmp/cccam3.conf
-          ./bin/cccam3 -c /tmp/cccam3.conf &
+          sed -i 's#^key_file = conf/SoftCam.Key#key_file = /tmp/SoftCam.Key#' /tmp/cccam3.conf
+          ./bin/cccam3 -c /tmp/cccam3.conf > /tmp/cccam3_stdout.log 2>&1 &
           SERVER_PID=$!
-          sleep 2
-          curl -fsS http://localhost:8080/status | grep -q '"status": "online"' || { cat /tmp/cccam3.log; kill $SERVER_PID; exit 1; }
-          curl -fsS http://localhost:8080/stats | grep -q '"cache"' || { cat /tmp/cccam3.log; kill $SERVER_PID; exit 1; }
+          sleep 3
+          if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo "::error::Servidor morreu no arranque"
+            cat /tmp/cccam3.log /tmp/cccam3_stdout.log 2>/dev/null | tail -n 60 | sed 's/^/::error::/'
+            exit 1
+          fi
+          if ! curl -fsS http://localhost:8080/status | grep -q '"status": "online"'; then
+            echo "::error::/status nao respondeu"
+            cat /tmp/cccam3.log /tmp/cccam3_stdout.log 2>/dev/null | tail -n 60 | sed 's/^/::error::/'
+            kill $SERVER_PID
+            exit 1
+          fi
+          if ! curl -fsS http://localhost:8080/stats | grep -q '"cache"'; then
+            echo "::error::/stats nao respondeu"
+            kill $SERVER_PID
+            exit 1
+          fi
           kill $SERVER_PID
           wait $SERVER_PID 2>/dev/null || true
           echo "Smoke test OK"
