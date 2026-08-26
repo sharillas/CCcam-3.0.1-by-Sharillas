@@ -28,7 +28,10 @@ jobs:
       - name: Build with PC/SC
         run: |
           make clean
-          make -j2 USE_PCSC=1
+          if ! make -j2 USE_PCSC=1 2>&1 | tee /tmp/build_pcsc.log; then
+            tail -n 50 /tmp/build_pcsc.log | sed 's/^/::error::/'
+            exit 1
+          fi
 
       - name: Self-tests
         run: make test

@@ -6,7 +6,7 @@
 
 #ifdef USE_PCSC
 
-#include <winscard.h>
+#include <PCSC/winscard.h>
 #include <unistd.h>
 
 static SCARDCONTEXT g_sc_context = 0;
