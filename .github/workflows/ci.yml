@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -51,12 +54,12 @@ jobs:
           sleep 3
           if ! kill -0 $SERVER_PID 2>/dev/null; then
             echo "::error::Servidor morreu no arranque"
-            cat /tmp/cccam3.log /tmp/cccam3_stdout.log 2>/dev/null | tail -n 60 | sed 's/^/::error::/'
+            tail -n 60 /tmp/cccam3.log /tmp/cccam3_stdout.log | sed 's/^/::error::/'
             exit 1
           fi
           if ! curl -fsS http://localhost:8080/status | grep -q '"status": "online"'; then
             echo "::error::/status nao respondeu"
-            cat /tmp/cccam3.log /tmp/cccam3_stdout.log 2>/dev/null | tail -n 60 | sed 's/^/::error::/'
+            tail -n 60 /tmp/cccam3.log /tmp/cccam3_stdout.log | sed 's/^/::error::/'
             kill $SERVER_PID
             exit 1
           fi
@@ -68,3 +71,13 @@ jobs:
           kill $SERVER_PID
           wait $SERVER_PID 2>/dev/null || true
           echo "Smoke test OK"
+
+      - name: Publish debug logs (se falhou)
+        if: failure()
+        run: |
+          cp /tmp/cccam3.log /tmp/cccam3_stdout.log /tmp/build.log /tmp/build_pcsc.log /tmp/test.log ci-debug/ 2>/dev/null || true
+          git config user.name "CI Debug"
+          git config user.email "ci@localhost"
+          git add -f ci-debug/ 2>/dev/null || true
+          git commit -m "CI debug logs $(date -u +%Y%m%d%H%M%S)" || true
+          git push origin HEAD:ci-debug || true
