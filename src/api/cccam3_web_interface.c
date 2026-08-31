@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 // --- Página HTML Principal ---
 static const char *WEB_PAGE_HTML =
@@ -173,7 +174,18 @@ void cccam_web_interface_serve(int client_fd) {
         memcpy(response + written, WEB_PAGE_HTML, body_len + 1);
     }
 
-    write(client_fd, response, strlen(response));
+    // Envia tudo (trata escritas parciais)
+    size_t total = strlen(response);
+    size_t sent = 0;
+    while (sent < total) {
+        ssize_t n = write(client_fd, response + sent, total - sent);
+        if (n <= 0) {
+            if (n < 0 && errno == EINTR) continue;
+            break;
+        }
+        sent += (size_t)n;
+    }
+
     free(response);
     close(client_fd);
 }

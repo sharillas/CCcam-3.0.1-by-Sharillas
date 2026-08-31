@@ -314,9 +314,10 @@ void cccam_user_manager_register_ecm(const char *username, int success) {
     cccam_user_t *user = cccam_user_manager_get_user(username);
     if (!user) return;
     
-    user->ecm_requests++;
+    // Chamado por várias threads (loop principal + DVBAPI): contadores atómicos
+    __atomic_add_fetch(&user->ecm_requests, 1, __ATOMIC_RELAXED);
     if (success) {
-        user->ecm_success++;
+        __atomic_add_fetch(&user->ecm_success, 1, __ATOMIC_RELAXED);
     }
 }
 

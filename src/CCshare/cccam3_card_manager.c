@@ -265,13 +265,17 @@ static int remote_ensure_login(cccam_reader_t *reader) {
         return -1;
     }
 
-    // Deriva a chave de sessão a partir da resposta do handshake
+    // Deriva a chave de sessão a partir da resposta do handshake.
+    // Proteger a sequência: o estado do handshake é global e partilhado
+    // com o login de clientes no loop principal.
+    cccam_handshake_lock();
     int hs_result = cccam_protocol_handle_login_response(&login,
                                                          payload ? (const uint8_t *)payload : (const uint8_t *)resp_buf,
                                                          payload_len);
     free(payload);
 
     if (hs_result != 0) {
+        cccam_handshake_unlock();
         cccam_log(LOG_WARN, "CCshare: Handshake falhado com %s", reader->name);
         return -1;
     }
@@ -296,7 +300,10 @@ static int remote_ensure_login(cccam_reader_t *reader) {
             break;
     }
 
-    if (cccam_handshake_get_session_key(session_key, &key_len) == 0) {
+    int key_ok = (cccam_handshake_get_session_key(session_key, &key_len) == 0);
+    cccam_handshake_unlock();
+
+    if (key_ok) {
         if (cccam_protocol_set_crypto(&reader->crypto, wire_mode, session_key, key_len) != 0) {
             cccam_log(LOG_WARN, "CCshare: Falha ao definir criptografia da sessão com %s", reader->name);
             return -1;
@@ -543,9 +550,9 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
         return -1;
     }
     
-    reader->ecm_requests++;
+    // Contadores lidos pela API REST noutra thread: manter atómicos
+    __atomic_add_fetch(&reader->ecm_requests, 1, __ATOMIC_RELAXED);
     reader->last_used = time(NULL);
-    
     int result = -1;
     
     // Obtém CW do leitor de acordo com o tipo
@@ -558,7 +565,7 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
             if (reader->remote_fd < 0) {
                 if (remote_connect(reader) != 0) {
                     reader_mark_failure(reader);
-                    reader->ecm_fail++;
+                    __atomic_add_fetch(&reader->ecm_fail, 1, __ATOMIC_RELAXED);
                     cccam_log(LOG_WARN, "CCshare: Falha ao ligar a leitor remoto %s", reader->name);
                     return -1;
                 }
@@ -581,12 +588,12 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
     }
     
     if (result == 0) {
-        reader->ecm_success++;
+        __atomic_add_fetch(&reader->ecm_success, 1, __ATOMIC_RELAXED);
         reader_mark_success(reader);
         if (reader_id) *reader_id = reader->id;
         cccam_log(LOG_DEBUG, "CCshare: CW obtida do leitor '%s' (hop %d)", reader->name, *hop);
     } else {
-        reader->ecm_fail++;
+        __atomic_add_fetch(&reader->ecm_fail, 1, __ATOMIC_RELAXED);
         reader_mark_failure(reader);
         cccam_log(LOG_WARN, "CCshare: Falha ao obter CW do leitor '%s'", reader->name);
     }
@@ -621,7 +628,6 @@ void cccam_card_manager_get_stats(int *total_readers, int *active_readers,
         if (current->type == READER_TYPE_REMOTE) remote++;
         current = current->next;
     }
-    
     if (active_readers) *active_readers = active;
     if (local_readers) *local_readers = local;
     if (remote_readers) *remote_readers = remote;

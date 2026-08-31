@@ -395,7 +395,10 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
     }
 
     uint8_t handshake_resp[16 + 12 + 16 + 16] = {0};
+    // O estado do handshake é global: proteger a sequência completa
+    cccam_handshake_lock();
     if (cccam_protocol_handle_login(&login, handshake_resp, sizeof(handshake_resp)) != 0) {
+        cccam_handshake_unlock();
         cccam_log(LOG_ERROR, "Handshake falhado com '%s'", login.username);
         return -1;
     }
@@ -407,6 +410,9 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
         key_len = 0;
         wire_mode = CCCAM_CRYPT_MODE_NONE;
     }
+    size_t resp_len = cccam_handshake_get_response_len();
+    cccam_handshake_unlock();
+
     if (cccam_protocol_set_crypto(&client->crypto, wire_mode, session_key, key_len) != 0) {
         cccam_log(LOG_ERROR, "Falha ao definir criptografia para '%s'", login.username);
         return -1;
@@ -418,7 +424,6 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
     client->hop_count = user->max_hops;
     cccam_client_authenticate(client);
 
-    size_t resp_len = cccam_handshake_get_response_len();
     uint8_t ack_buffer[CCCAM3_BUFFER_SIZE];
     size_t ack_len = sizeof(ack_buffer);
     if (cccam_protocol_build_login_ack(ack_buffer, &ack_len, handshake_resp, resp_len) != 0) {
@@ -689,7 +694,7 @@ int cccam3_run(void) {
 
         static time_t last_cache_clean = 0;
         if (now - last_cache_clean > 30) {
-            cccam_cache_clean_expired();
+            cccam_ecm_clean_expired_cache();
             last_cache_clean = now;
         }
     }

@@ -46,6 +46,8 @@ static int g_max_demux = DVBAPI_DEFAULT_MAX_DEMUX;
 static int g_running = 0;
 static pthread_t g_thread;
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_cond = PTHREAD_COND_INITIALIZER;
+static int g_active_clients = 0;
 static dvbapi_client_t g_clients[DVBAPI_DEFAULT_MAX_DEMUX * 2];
 
 void cccam_dvbapi_set_socket_path(const char *path) {
@@ -370,9 +372,18 @@ static void *dvbapi_client_thread(void *arg) {
     }
 
     cccam_log(LOG_INFO, "DVBAPI: Descodificador desligado (fd %d)", fd);
-    close(fd);
-    client->fd = -1;
+
+    // O socket é fechado exatamente uma vez (aqui). O cleanup usa
+    // shutdown() para acordar as threads, nunca close().
+    pthread_mutex_lock(&g_lock);
+    if (client->fd >= 0) {
+        close(client->fd);
+        client->fd = -1;
+    }
     client->alive = 0;
+    __atomic_sub_fetch(&g_active_clients, 1, __ATOMIC_RELAXED);
+    pthread_cond_broadcast(&g_cond);
+    pthread_mutex_unlock(&g_lock);
     return NULL;
 }
 
@@ -439,6 +450,7 @@ static void *dvbapi_thread_func(void *arg) {
             memset(slot, 0, sizeof(*slot));
             slot->fd = client_fd;
             slot->alive = 1;
+            __atomic_add_fetch(&g_active_clients, 1, __ATOMIC_RELAXED);
             pthread_t t;
             pthread_create(&t, NULL, dvbapi_client_thread, slot);
             pthread_detach(t);
@@ -476,12 +488,12 @@ int cccam_dvbapi_init(void) {
 void cccam_dvbapi_cleanup(void) {
     g_running = 0;
 
+    // Acorda as threads dos clientes com shutdown (nunca close aqui:
+    // cada thread fecha o seu próprio fd exatamente uma vez)
     pthread_mutex_lock(&g_lock);
     for (int i = 0; i < (int)(sizeof(g_clients) / sizeof(g_clients[0])); i++) {
         if (g_clients[i].alive && g_clients[i].fd >= 0) {
-            close(g_clients[i].fd);
-            g_clients[i].fd = -1;
-            g_clients[i].alive = 0;
+            shutdown(g_clients[i].fd, SHUT_RDWR);
         }
     }
     pthread_mutex_unlock(&g_lock);
@@ -490,5 +502,15 @@ void cccam_dvbapi_cleanup(void) {
         pthread_join(g_thread, NULL);
         g_thread = 0;
     }
+
+    // Espera que as threads de clientes (detached) terminem: podem estar
+    // dentro do processamento de ECM, que usa a cache/leitores - têm de
+    // sair antes do cleanup desses subsistemas
+    pthread_mutex_lock(&g_lock);
+    while (__atomic_load_n(&g_active_clients, __ATOMIC_RELAXED) > 0) {
+        pthread_cond_wait(&g_cond, &g_lock);
+    }
+    pthread_mutex_unlock(&g_lock);
+
     cccam_log(LOG_INFO, "DVBAPI: Limpeza concluída");
 }

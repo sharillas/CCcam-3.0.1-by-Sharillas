@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 
@@ -14,6 +15,17 @@ static RSA *g_server_rsa_key = NULL;
 static uint8_t g_session_key[32];
 static size_t g_session_key_len = 0;
 static uint8_t g_handshake_mode = HANDSHAKE_MODE_LEGACY;
+
+// Protege o estado global do handshake (usado por várias threads)
+static pthread_mutex_t g_handshake_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void cccam_handshake_lock(void) {
+    pthread_mutex_lock(&g_handshake_mutex);
+}
+
+void cccam_handshake_unlock(void) {
+    pthread_mutex_unlock(&g_handshake_mutex);
+}
 
 // --- Funções Auxiliares ---
 

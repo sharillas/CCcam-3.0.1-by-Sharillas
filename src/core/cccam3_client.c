@@ -13,7 +13,7 @@ static cccam_client_t *g_clients[MAX_CLIENTS];
 static int g_client_count = 0;
 
 cccam_client_t *cccam_client_create(int socket_fd, struct sockaddr_in *addr) {
-    if (g_client_count >= MAX_CLIENTS) {
+    if (__atomic_load_n(&g_client_count, __ATOMIC_RELAXED) >= MAX_CLIENTS) {
         cccam_log(LOG_WARN, "Máximo de clientes atingido (%d)", MAX_CLIENTS);
         return NULL;
     }
@@ -40,7 +40,8 @@ cccam_client_t *cccam_client_create(int socket_fd, struct sockaddr_in *addr) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i] == NULL) {
             g_clients[i] = client;
-            g_client_count++;
+            // A API REST lê o contador noutra thread: manter atómico
+            __atomic_add_fetch(&g_client_count, 1, __ATOMIC_RELAXED);
             cccam_log(LOG_INFO, "Cliente %u ligado (socket %d)", client->client_id, socket_fd);
             return client;
         }
@@ -64,7 +65,7 @@ void cccam_client_destroy(cccam_client_t *client) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i] == client) {
             g_clients[i] = NULL;
-            g_client_count--;
+            __atomic_sub_fetch(&g_client_count, 1, __ATOMIC_RELAXED);
             break;
         }
     }
@@ -98,7 +99,7 @@ cccam_client_t *cccam_client_get_by_index(int index) {
 }
 
 int cccam_client_get_count(void) {
-    return g_client_count;
+    return __atomic_load_n(&g_client_count, __ATOMIC_RELAXED);
 }
 
 void cccam_client_authenticate(cccam_client_t *client) {

@@ -41,6 +41,18 @@ int cccam_handshake_legacy_client(cccam_login_msg_t *login, const uint8_t *serve
 // Negocia o modo de handshake com o cliente
 uint8_t cccam_handshake_negotiate_mode(uint8_t client_mode);
 
+// --- Sincronização ---
+// O estado do handshake (chave de sessão e modo) é global e pode ser
+// acedido por várias threads (login de clientes no loop principal,
+// login de leitores remotos nas threads de ECM). Usar lock/unlock à volta
+// da sequência: handle_login -> get_mode -> get_session_key -> get_response_len.
+
+// Adquire o mutex do handshake
+void cccam_handshake_lock(void);
+
+// Liberta o mutex do handshake
+void cccam_handshake_unlock(void);
+
 // Obtém o modo de handshake atual
 uint8_t cccam_handshake_get_mode(void);
 

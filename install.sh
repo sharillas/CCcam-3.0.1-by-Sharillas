@@ -144,8 +144,7 @@ if [ "$FROM_SOURCE" -eq 1 ]; then
     fi
     tmpdir=$(mktemp -d)
     cd "$tmpdir"
-    download "$RAW/../archive/main.tar.gz" "src.tar.gz" || \
-        download "https://github.com/$REPO/archive/refs/heads/main.tar.gz" "src.tar.gz" || exit 1
+    download "https://github.com/$REPO/archive/refs/heads/main.tar.gz" "src.tar.gz" || exit 1
     tar xzf src.tar.gz
     cd CCcam-3.0.1-by-Sharillas-main
     make clean >/dev/null

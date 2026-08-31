@@ -3,9 +3,11 @@
 #include <stdarg.h>
 #include <time.h>
 #include <string.h>
+#include <pthread.h>
 
 static int g_log_level = LOG_INFO;
 static FILE *g_log_file = NULL;
+static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 static const char *log_levels[] = {
     "ERROR", "WARN", "INFO", "DEBUG", "TRACE"
 };
@@ -52,6 +54,9 @@ void cccam_log(int level, const char *format, ...) {
         va_copy(args_copy, args);
     }
 
+    // Múltiplas threads escrevem no log: evitar linhas intercaladas
+    pthread_mutex_lock(&g_log_mutex);
+
     FILE *out = (level <= LOG_ERROR) ? stderr : stdout;
     fprintf(out, "[%s] [%-5s] ", time_str, level_name);
     vfprintf(out, format, args);
@@ -66,4 +71,6 @@ void cccam_log(int level, const char *format, ...) {
         fflush(g_log_file);
         va_end(args_copy);
     }
+
+    pthread_mutex_unlock(&g_log_mutex);
 }

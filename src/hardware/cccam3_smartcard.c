@@ -49,14 +49,21 @@ typedef struct {
     uint8_t sw2;
 } sc_response_t;
 
-static int sc_transmit(SCARDHANDLE card, const uint8_t *apdu, size_t apdu_len,
+static int sc_transmit(SCARDHANDLE card, DWORD active_proto,
+                       const uint8_t *apdu, size_t apdu_len,
                        sc_response_t *resp) {
     uint8_t recv_buf[512];
     DWORD recv_len = sizeof(recv_buf);
     LONG rc;
+    const SCARD_IO_REQUEST *pio = SCARD_PCI_T0;
+
+    // Usa o protocolo negociado na ligação (T=0 ou T=1)
+    if (active_proto == SCARD_PROTOCOL_T1) {
+        pio = SCARD_PCI_T1;
+    }
 
     memset(recv_buf, 0, sizeof(recv_buf));
-    rc = SCardTransmit(card, SCARD_PCI_T0, apdu, (DWORD)apdu_len,
+    rc = SCardTransmit(card, pio, apdu, (DWORD)apdu_len,
                        NULL, recv_buf, &recv_len);
     if (rc != SCARD_S_SUCCESS) {
         cccam_log(LOG_WARN, "SMARTCARD: SCardTransmit falhou (0x%08lX)", (unsigned long)rc);
@@ -84,7 +91,7 @@ static int sc_status_ok(const sc_response_t *resp) {
 
 // --- Ligação ao cartão ---
 
-static SCARDHANDLE sc_connect(const char *reader_name) {
+static SCARDHANDLE sc_connect(const char *reader_name, DWORD *active_proto_out) {
     SCARDHANDLE card = 0;
     DWORD active_proto = 0;
     LONG rc;
@@ -112,7 +119,11 @@ static SCARDHANDLE sc_connect(const char *reader_name) {
         return 0;
     }
 
-    cccam_log(LOG_DEBUG, "SMARTCARD: Ligado ao cartão em '%s'", reader_sel);
+    if (active_proto_out) {
+        *active_proto_out = active_proto;
+    }
+    cccam_log(LOG_DEBUG, "SMARTCARD: Ligado ao cartão em '%s' (%s)",
+              reader_sel, active_proto == SCARD_PROTOCOL_T1 ? "T=1" : "T=0");
     return card;
 }
 
@@ -120,14 +131,14 @@ static SCARDHANDLE sc_connect(const char *reader_name) {
 
 // Seca/Mediaguard (0x0100): enumera providers com CA A4, envia o ECM com
 // C1 3C e lê a CW com C1 3A (mesma sequência do OSCam reader-seca.c).
-static int sc_seca_ecm(SCARDHANDLE card, uint16_t provid,
+static int sc_seca_ecm(SCARDHANDLE card, DWORD active_proto, uint16_t provid,
                        const uint8_t *ecm, uint16_t ecm_len, uint8_t *cw) {
     sc_response_t resp;
     int provider_index = -1;
 
     // 1. Enumerar providers: CA A4 00 00 00
     const uint8_t ins_a4[] = { 0xCA, 0xA4, 0x00, 0x00, 0x00 };
-    if (sc_transmit(card, ins_a4, sizeof(ins_a4), &resp) != 0) {
+    if (sc_transmit(card, active_proto, ins_a4, sizeof(ins_a4), &resp) != 0) {
         return -1;
     }
 
@@ -174,7 +185,7 @@ static int sc_seca_ecm(SCARDHANDLE card, uint16_t provid,
     ins_3c[5] = data_len;
     memcpy(ins_3c + 6, ecm + 8, data_len);
 
-    if (sc_transmit(card, ins_3c, 6 + data_len, &resp) != 0) {
+    if (sc_transmit(card, active_proto, ins_3c, 6 + data_len, &resp) != 0) {
         return -1;
     }
 
@@ -182,9 +193,9 @@ static int sc_seca_ecm(SCARDHANDLE card, uint16_t provid,
     if (resp.sw1 == 0x90 && resp.sw2 == 0x1A) {
         const uint8_t ins_30[] = { 0xC1, 0x30, 0x00, 0x02, 0x09 };
         const uint8_t ins_30_data[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF };
-        if (sc_transmit(card, ins_30, sizeof(ins_30), &resp) != 0) return -1;
-        if (sc_transmit(card, ins_30_data, sizeof(ins_30_data), &resp) != 0) return -1;
-        if (sc_transmit(card, ins_3c, 6 + data_len, &resp) != 0) return -1;
+        if (sc_transmit(card, active_proto, ins_30, sizeof(ins_30), &resp) != 0) return -1;
+        if (sc_transmit(card, active_proto, ins_30_data, sizeof(ins_30_data), &resp) != 0) return -1;
+        if (sc_transmit(card, active_proto, ins_3c, 6 + data_len, &resp) != 0) return -1;
     }
 
     // SW 96 00 (ECM falso) e 93 02 (não subscrito) → falha
@@ -196,7 +207,7 @@ static int sc_seca_ecm(SCARDHANDLE card, uint16_t provid,
 
     // 3. Ler CW: C1 3A 00 00 10
     const uint8_t ins_3a[] = { 0xC1, 0x3A, 0x00, 0x00, 0x10 };
-    if (sc_transmit(card, ins_3a, sizeof(ins_3a), &resp) != 0) {
+    if (sc_transmit(card, active_proto, ins_3a, sizeof(ins_3a), &resp) != 0) {
         return -1;
     }
     if (resp.data_len < 16 || !sc_status_ok(&resp)) {
@@ -210,8 +221,8 @@ static int sc_seca_ecm(SCARDHANDLE card, uint16_t provid,
 }
 
 // Conax (0x0B00): DD A2 com o ECM, DD CA para ler a CW (OSCam reader-conax.c).
-static int sc_conax_ecm(SCARDHANDLE card, const uint8_t *ecm, uint16_t ecm_len,
-                        uint8_t *cw) {
+static int sc_conax_ecm(SCARDHANDLE card, DWORD active_proto,
+                        const uint8_t *ecm, uint16_t ecm_len, uint8_t *cw) {
     sc_response_t resp;
     uint8_t buf[256];
 
@@ -233,8 +244,8 @@ static int sc_conax_ecm(SCARDHANDLE card, const uint8_t *ecm, uint16_t ecm_len,
     ins_a2[3] = 0x00;
     ins_a2[4] = (uint8_t)(ecm_len + 3);
 
-    if (sc_transmit(card, ins_a2, sizeof(ins_a2), &resp) != 0) return -1;
-    if (sc_transmit(card, buf, ecm_len + 3, &resp) != 0) return -1;
+    if (sc_transmit(card, active_proto, ins_a2, sizeof(ins_a2), &resp) != 0) return -1;
+    if (sc_transmit(card, active_proto, buf, ecm_len + 3, &resp) != 0) return -1;
 
     // Lê a resposta enquanto o cartão pedir (SW1 = 0x98)
     int found_cw = 0;
@@ -249,7 +260,7 @@ static int sc_conax_ecm(SCARDHANDLE card, const uint8_t *ecm, uint16_t ecm_len,
         ins_ca[3] = 0x00;
         ins_ca[4] = resp.sw2;
 
-        if (sc_transmit(card, ins_ca, sizeof(ins_ca), &resp) != 0) return -1;
+        if (sc_transmit(card, active_proto, ins_ca, sizeof(ins_ca), &resp) != 0) return -1;
 
         if (resp.sw1 == 0x98 || resp.sw1 == 0x90) {
             for (size_t i = 0; i + 2 <= resp.data_len; ) {
@@ -298,17 +309,18 @@ int cccam_smartcard_ecm(const char *reader_name, uint16_t caid, uint16_t provid,
         return -1;
     }
 
-    card = sc_connect(reader_name);
+    DWORD active_proto = SCARD_PROTOCOL_T0;
+    card = sc_connect(reader_name, &active_proto);
     if (!card) {
         return -1;
     }
 
     switch (caid & 0xFF00) {
         case 0x0100:
-            result = sc_seca_ecm(card, provid, ecm, ecm_len, cw);
+            result = sc_seca_ecm(card, active_proto, provid, ecm, ecm_len, cw);
             break;
         case 0x0B00:
-            result = sc_conax_ecm(card, ecm, ecm_len, cw);
+            result = sc_conax_ecm(card, active_proto, ecm, ecm_len, cw);
             break;
         default:
             cccam_log(LOG_DEBUG, "SMARTCARD: CAID %04X não suportado no leitor local", caid);

@@ -64,13 +64,13 @@ static void cache_evict_lru(void) {
     cache_entry_t *tail = g_cache_tail;
     cache_unlink(tail);
     free(tail);
-    g_cache_entries--;
+    __atomic_sub_fetch(&g_cache_entries, 1, __ATOMIC_RELAXED);
 }
 
 static void cache_free_entry(cache_entry_t *entry) {
     cache_unlink(entry);
     free(entry);
-    g_cache_entries--;
+    __atomic_sub_fetch(&g_cache_entries, 1, __ATOMIC_RELAXED);
 }
 
 // --- Implementação das Funções da API ---
@@ -134,7 +134,7 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
     }
 
     // Cache cheia: evicção LRU (entrada menos usada recentemente)
-    while (g_cache_entries >= g_cache_max_entries) {
+    while (__atomic_load_n(&g_cache_entries, __ATOMIC_RELAXED) >= g_cache_max_entries) {
         cache_evict_lru();
     }
 
@@ -160,7 +160,7 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
     if (g_cache_head) g_cache_head->prev = entry;
     g_cache_head = entry;
     if (!g_cache_tail) g_cache_tail = entry;
-    g_cache_entries++;
+    __atomic_add_fetch(&g_cache_entries, 1, __ATOMIC_RELAXED);
 
     cccam_log(LOG_DEBUG, "CCshare: Adicionada CW para CAID %04X SID %04X (hop %d, expira em %lds)", 
               caid, sid, hop, entry->expires_at - time(NULL));
@@ -175,7 +175,7 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
     }
 
     if (!g_cache_enabled) {
-        g_cache_misses++;
+        __atomic_add_fetch(&g_cache_misses, 1, __ATOMIC_RELAXED);
         return 0;
     }
 
@@ -189,13 +189,13 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
                 cache_entry_t *expired = current;
                 current = current->next;
                 cache_free_entry(expired);
-                g_cache_misses++;
+                __atomic_add_fetch(&g_cache_misses, 1, __ATOMIC_RELAXED);
                 return 0;
             }
             
             memcpy(cw, current->cw, 16);
             *hop = current->hop;
-            g_cache_hits++;
+            __atomic_add_fetch(&g_cache_hits, 1, __ATOMIC_RELAXED);
             
             // LRU: a entrada passa a ser a mais recente
             cache_move_to_head(current);
@@ -206,7 +206,7 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
         current = current->next;
     }
 
-    g_cache_misses++;
+    __atomic_add_fetch(&g_cache_misses, 1, __ATOMIC_RELAXED);
     cccam_log(LOG_DEBUG, "CCshare: MISS para CAID %04X SID %04X", caid, sid);
     return 0;
 }
@@ -249,9 +249,9 @@ int cccam_cache_clean_expired(void) {
 }
 
 void cccam_cache_get_stats(int *total_entries, int *hit_count, int *miss_count) {
-    if (total_entries) *total_entries = g_cache_entries;
-    if (hit_count) *hit_count = g_cache_hits;
-    if (miss_count) *miss_count = g_cache_misses;
+    if (total_entries) *total_entries = __atomic_load_n(&g_cache_entries, __ATOMIC_RELAXED);
+    if (hit_count) *hit_count = __atomic_load_n(&g_cache_hits, __ATOMIC_RELAXED);
+    if (miss_count) *miss_count = __atomic_load_n(&g_cache_misses, __ATOMIC_RELAXED);
 }
 
 void cccam_cache_set_timeout(int timeout_seconds) {

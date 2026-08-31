@@ -42,6 +42,20 @@ void cccam_ecm_cleanup(void);
 // Processa um pedido ECM
 int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *response);
 
+// --- Sincronização ---
+// O processamento de ECM pode correr em várias threads (loop principal,
+// DVBAPI por ligação, leitor DVB). Estas funções protegem os subsistemas
+// partilhados (cache, card manager, hop control).
+
+// Adquire o mutex de processamento de ECM
+void cccam_ecm_lock(void);
+
+// Liberta o mutex de processamento de ECM
+void cccam_ecm_unlock(void);
+
+// Limpa entradas expiradas da cache (com o mutex de ECM adquirido)
+int cccam_ecm_clean_expired_cache(void);
+
 // Envia CW para o cliente (usa o contexto de criptografia da sessão)
 int cccam_ecm_send_cw(int client_fd, const cccam_crypto_ctx_t *crypto,
                       const cccam_ecm_response_t *response);
