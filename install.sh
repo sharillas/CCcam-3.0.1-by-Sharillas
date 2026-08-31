@@ -149,7 +149,7 @@ if [ "$FROM_SOURCE" -eq 1 ]; then
     cd CCcam-3.0.1-by-Sharillas-main
     make clean >/dev/null
     make
-    install -m 0755 bin/cccam3 "$BIN_DIR/cccam3"
+    install -m 0755 bin/cccam3 "$BIN_DIR/cccam3.bin"
     cd /
     rm -rf "$tmpdir"
 else
@@ -160,10 +160,19 @@ else
         exit 1
     }
     chmod 0755 "$BIN_DIR/cccam3.tmp"
-    mv -f "$BIN_DIR/cccam3.tmp" "$BIN_DIR/cccam3"
+    mv -f "$BIN_DIR/cccam3.tmp" "$BIN_DIR/cccam3.bin"
 fi
 
-echo ">> Binário instalado em $BIN_DIR/cccam3"
+# --- Wrapper de controlo: cccam3 start|stop|restart|status|log ---
+if [ -f "$BIN_DIR/cccam3.bin" ]; then
+    download "$RAW/scripts/cccam3" "$BIN_DIR/cccam3" || {
+        echo "AVISO: falha a descarregar o wrapper de controlo."
+    }
+    chmod 0755 "$BIN_DIR/cccam3"
+    echo ">> Wrapper de controlo instalado: cccam3 start|stop|restart|status|log"
+fi
+
+echo ">> Binário instalado em $BIN_DIR/cccam3.bin"
 
 # --- Configurações (não sobrescrever as existentes) ---
 mkdir -p "$CONF_DIR"
@@ -212,7 +221,7 @@ EOF
 #!/bin/sh
 case "\$1" in
   start)  $BIN_DIR/cccam3 -c $CONF_DIR/cccam3.conf >/dev/null 2>&1 & ;;
-  stop)   pkill -f "$BIN_DIR/cccam3 -c" ;;
+  stop)   pkill -f "$BIN_DIR/cccam3.bin -c" ;;
   restart) \$0 stop; sleep 1; \$0 start ;;
 esac
 EOF
@@ -237,9 +246,10 @@ echo "   binário : $BIN_DIR/cccam3"
 echo "   configs : $CONF_DIR/"
 echo ""
 echo " Próximos passos:"
-echo "   1. Editar utilizadores : $CONF_DIR/cccam3.users"
-echo "   2. Editar leitores     : $CONF_DIR/cccam3.readers"
-echo "   3. (VPS) Abrir portas 12000, 34000 e 8080 na firewall"
-echo "   4. Painel web          : http://<IP>:8080/web"
-echo "   5. Ver o log           : tail -f /var/log/cccam3.log"
+echo "   1. Controlo          : cccam3 start|stop|restart|status|log"
+echo "   2. Editar utilizadores : $CONF_DIR/cccam3.users"
+echo "   3. Editar leitores     : $CONF_DIR/cccam3.readers"
+echo "   4. (VPS) Abrir portas 12000, 34000 e 8080 na firewall"
+echo "   5. Painel web          : http://<IP>:8080/web"
+echo "   6. Ver o log           : cccam3 log"
 echo "=============================================="

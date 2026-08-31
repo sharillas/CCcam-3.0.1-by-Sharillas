@@ -1,0 +1,45 @@
+#!/bin/bash
+# =====================================================================
+# CCcam3 - Controlo do serviço (wrapper)
+#
+# Uso (de qualquer pasta):
+#   cccam3 start | stop | restart
+#   cccam3 status
+#   cccam3 log
+#
+# Qualquer outro argumento é passado diretamente ao servidor:
+#   cccam3 -c /etc/cccam3/cccam3.conf -d
+# =====================================================================
+
+SERVICE="cccam3"
+BIN="/usr/local/bin/cccam3.bin"
+LOG="/var/log/cccam3.log"
+
+case "${1:-}" in
+    start|stop|restart)
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl "$1" "$SERVICE"
+        elif [ -x /etc/init.d/cccam3 ]; then
+            /etc/init.d/cccam3 "$1"
+        else
+            echo "cccam3: sem systemd nem init.d - arranca com: $BIN -c /etc/cccam3/cccam3.conf"
+            exit 1
+        fi
+        ;;
+    status)
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl status "$SERVICE" --no-pager
+        elif [ -x /etc/init.d/cccam3 ]; then
+            /etc/init.d/cccam3 status
+        else
+            echo "cccam3: estado desconhecido (sem systemd nem init.d)"
+            exit 1
+        fi
+        ;;
+    log)
+        tail -n 50 -f "$LOG"
+        ;;
+    *)
+        exec "$BIN" "$@"
+        ;;
+esac
