@@ -4,6 +4,7 @@
 #include "cccam3_structs.h"
 #include <stdint.h>
 #include <time.h>
+#include <pthread.h>
 
 // --- Constantes ---
 #define CCCAM_MAX_READERS 32
@@ -33,6 +34,7 @@ typedef struct {
     char name[CCCAM_READER_NAME_LEN];
     cccam_reader_type_t type;
     cccam_reader_state_t state;
+    pthread_mutex_t lock;      // Protege o estado, o fd e a criptografia
     
     // Dados específicos do leitor
     uint16_t caid;              // CAID suportado (0 = todos)

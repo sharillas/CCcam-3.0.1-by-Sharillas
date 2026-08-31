@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
 
 // --- Variáveis Globais ---
 static uint8_t g_max_hops = CCCAM_DEFAULT_HOP_LIMIT;
@@ -12,6 +13,9 @@ static int g_hop_count = 0;
 static int g_hop_total_checks = 0;
 static int g_hop_blocked = 0;
 static int g_hop_allowed = 0;
+
+// Acedido por várias threads (processamento de ECMs em paralelo)
+static pthread_mutex_t g_hop_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // --- Funções Auxiliares Internas ---
 
@@ -75,9 +79,11 @@ int cccam_hop_control_register(uint16_t caid, uint16_t provid, uint16_t sid,
     if (!cccam_hop_control_is_valid(hop)) {
         return -1;
     }
+
+    pthread_mutex_lock(&g_hop_mutex);
     
     // Limpa entradas expiradas
-    cccam_hop_control_clean_expired();
+    cccam_hop_control_clean_expired_locked();
     
     // Remove entradas antigas do mesmo cliente/canal
     cccam_hop_entry_t *current = g_hop_entries;
@@ -100,6 +106,7 @@ int cccam_hop_control_register(uint16_t caid, uint16_t provid, uint16_t sid,
     // Cria nova entrada
     cccam_hop_entry_t *entry = malloc(sizeof(cccam_hop_entry_t));
     if (!entry) {
+        pthread_mutex_unlock(&g_hop_mutex);
         cccam_log(LOG_ERROR, "CCshare: Falha ao alocar memória para hop entry");
         return -1;
     }
@@ -116,6 +123,8 @@ int cccam_hop_control_register(uint16_t caid, uint16_t provid, uint16_t sid,
     entry->next = g_hop_entries;
     g_hop_entries = entry;
     g_hop_count++;
+
+    pthread_mutex_unlock(&g_hop_mutex);
     
     return 0;
 }
@@ -152,7 +161,8 @@ uint8_t cccam_hop_control_get_limit(void) {
     return g_max_hops;
 }
 
-int cccam_hop_control_clean_expired(void) {
+// Variante sem lock (chamada com g_hop_mutex adquirido)
+static int cccam_hop_control_clean_expired_locked(void) {
     cccam_hop_entry_t *current = g_hop_entries;
     cccam_hop_entry_t *prev = NULL;
     int removed = 0;
@@ -178,6 +188,14 @@ int cccam_hop_control_clean_expired(void) {
     if (removed > 0) {
         cccam_log(LOG_DEBUG, "CCshare: Hop Control - %d entradas expiradas removidas", removed);
     }
+    return removed;
+}
+
+int cccam_hop_control_clean_expired(void) {
+    int removed;
+    pthread_mutex_lock(&g_hop_mutex);
+    removed = cccam_hop_control_clean_expired_locked();
+    pthread_mutex_unlock(&g_hop_mutex);
     return removed;
 }
 

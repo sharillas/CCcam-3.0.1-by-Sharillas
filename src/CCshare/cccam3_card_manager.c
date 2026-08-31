@@ -22,6 +22,40 @@
 #define READER_RETRY_BACKOFF_SECONDS    30
 #define READER_CONNECT_TIMEOUT_SECONDS  5
 
+// --- Dedup de EMMs (não reenviar o mesmo EMM aos leitores) ---
+#define EMM_DEDUP_SLOTS 64
+#define EMM_DEDUP_WINDOW 60
+
+static uint64_t g_emm_hash[EMM_DEDUP_SLOTS];
+static time_t g_emm_time[EMM_DEDUP_SLOTS];
+static int g_emm_slot = 0;
+
+static uint64_t emm_hash(const uint8_t *data, uint16_t len) {
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    for (uint16_t i = 0; i < len; i++) {
+        hash ^= data[i];
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+// Devolve 1 se o EMM foi visto recentemente (dedup)
+static int emm_seen_recently(uint64_t hash) {
+    time_t now = time(NULL);
+    for (int i = 0; i < EMM_DEDUP_SLOTS; i++) {
+        if (g_emm_hash[i] == hash && (now - g_emm_time[i]) < EMM_DEDUP_WINDOW) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void emm_remember(uint64_t hash) {
+    g_emm_hash[g_emm_slot] = hash;
+    g_emm_time[g_emm_slot] = time(NULL);
+    g_emm_slot = (g_emm_slot + 1) % EMM_DEDUP_SLOTS;
+}
+
 // --- Variáveis Globais ---
 static cccam_reader_t *g_readers = NULL;
 static int g_reader_count = 0;
@@ -431,6 +465,7 @@ void cccam_card_manager_cleanup(void) {
         if (current->type == READER_TYPE_REMOTE && current->remote_fd >= 0) {
             close(current->remote_fd);
         }
+        pthread_mutex_destroy(&current->lock);
         free(current);
         current = next;
     }
@@ -449,6 +484,7 @@ int cccam_card_manager_add_reader(cccam_reader_t *reader) {
     reader->id = g_next_reader_id++;
     reader->remote_fd = -1;
     cccam_protocol_reset_crypto(&reader->crypto);
+    pthread_mutex_init(&reader->lock, NULL);
     
     // Adiciona à lista
     reader->next = g_readers;
@@ -474,6 +510,7 @@ int cccam_card_manager_remove_reader(uint32_t reader_id) {
             if (current->type == READER_TYPE_REMOTE && current->remote_fd >= 0) {
                 close(current->remote_fd);
             }
+            pthread_mutex_destroy(&current->lock);
             free(current);
             g_reader_count--;
             cccam_log(LOG_INFO, "CCshare: Leitor %u removido", reader_id);
@@ -536,7 +573,6 @@ cccam_reader_t *cccam_card_manager_select_reader(uint16_t caid, uint16_t provid,
     
     return best;
 }
-
 // Obtém a CW de um leitor para um determinado ECM
 int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
                                const uint8_t *ecm_data, uint16_t ecm_len,
@@ -549,10 +585,13 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
         cccam_log(LOG_WARN, "CCshare: Sem leitor disponível para CAID %04X SID %04X", caid, sid);
         return -1;
     }
+
+    // Lock por leitor: leitores diferentes processam em paralelo
+    pthread_mutex_lock(&reader->lock);
     
-    // Contadores lidos pela API REST noutra thread: manter atómicos
     __atomic_add_fetch(&reader->ecm_requests, 1, __ATOMIC_RELAXED);
     reader->last_used = time(NULL);
+    
     int result = -1;
     
     // Obtém CW do leitor de acordo com o tipo
@@ -567,6 +606,7 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
                     reader_mark_failure(reader);
                     __atomic_add_fetch(&reader->ecm_fail, 1, __ATOMIC_RELAXED);
                     cccam_log(LOG_WARN, "CCshare: Falha ao ligar a leitor remoto %s", reader->name);
+                    pthread_mutex_unlock(&reader->lock);
                     return -1;
                 }
             }
@@ -597,7 +637,8 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
         reader_mark_failure(reader);
         cccam_log(LOG_WARN, "CCshare: Falha ao obter CW do leitor '%s'", reader->name);
     }
-    
+
+    pthread_mutex_unlock(&reader->lock);
     return result;
 }
 
@@ -611,6 +652,13 @@ int cccam_card_manager_send_emm(uint16_t caid, uint16_t provid,
         return -1;
     }
 
+    // Dedup: não reenviar o mesmo EMM em sequência (flood de EMMs do stream)
+    uint64_t hash = emm_hash(emm_data, emm_len);
+    if (emm_seen_recently(hash)) {
+        return 0;
+    }
+    emm_remember(hash);
+
     while (current) {
         if (current->type != READER_TYPE_REMOTE || !current->enabled) {
             current = current->next;
@@ -623,10 +671,14 @@ int cccam_card_manager_send_emm(uint16_t caid, uint16_t provid,
             continue;
         }
 
+        // Lock por leitor (paraleliza com o processamento de ECMs)
+        pthread_mutex_lock(&current->lock);
+
         // Liga (com timeout) e autentica se necessário
         if (current->remote_fd < 0) {
             if (remote_connect(current) != 0) {
                 reader_mark_failure(current);
+                pthread_mutex_unlock(&current->lock);
                 current = current->next;
                 continue;
             }
@@ -639,6 +691,7 @@ int cccam_card_manager_send_emm(uint16_t caid, uint16_t provid,
             }
             current->remote_logged_in = 0;
             reader_mark_failure(current);
+            pthread_mutex_unlock(&current->lock);
             current = current->next;
             continue;
         }
@@ -647,6 +700,7 @@ int cccam_card_manager_send_emm(uint16_t caid, uint16_t provid,
         size_t emm_msg_len = sizeof(emm_buf);
         if (cccam_protocol_build_emm(emm_buf, &emm_msg_len, caid, provid,
                                      emm_data, emm_len, &current->crypto) != 0) {
+            pthread_mutex_unlock(&current->lock);
             current = current->next;
             continue;
         }
@@ -657,6 +711,7 @@ int cccam_card_manager_send_emm(uint16_t caid, uint16_t provid,
                       current->name, caid);
         }
 
+        pthread_mutex_unlock(&current->lock);
         current = current->next;
     }
 

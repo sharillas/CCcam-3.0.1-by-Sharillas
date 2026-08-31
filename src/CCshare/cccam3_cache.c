@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
 
 // --- Estrutura Interna da Cache ---
 
@@ -31,6 +32,9 @@ static int g_cache_timeout = CCCAM_CACHE_DEFAULT_TIMEOUT;
 static int g_cache_hits = 0;
 static int g_cache_misses = 0;
 static int g_cache_enabled = 1;
+
+// A cache é acedida por várias threads (loop principal, DVBAPI, DVB)
+static pthread_mutex_t g_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // --- Funções Auxiliares Internas ---
 
@@ -118,6 +122,8 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
         return 0;
     }
 
+    pthread_mutex_lock(&g_cache_mutex);
+
     // Substitui a entrada existente para o mesmo canal
     cache_entry_t *current = g_cache_head;
     while (current) {
@@ -128,6 +134,7 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
             current->expires_at = expires_at > 0 ? expires_at : (time(NULL) + g_cache_timeout);
             current->valid = 1;
             cache_move_to_head(current);
+            pthread_mutex_unlock(&g_cache_mutex);
             return 0;
         }
         current = current->next;
@@ -140,6 +147,7 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
 
     cache_entry_t *entry = malloc(sizeof(cache_entry_t));
     if (!entry) {
+        pthread_mutex_unlock(&g_cache_mutex);
         cccam_log(LOG_ERROR, "CCshare: Falha ao alocar memória para cache");
         return -1;
     }
@@ -162,6 +170,8 @@ int cccam_cache_add(uint16_t caid, uint16_t provid, uint16_t sid,
     if (!g_cache_tail) g_cache_tail = entry;
     __atomic_add_fetch(&g_cache_entries, 1, __ATOMIC_RELAXED);
 
+    pthread_mutex_unlock(&g_cache_mutex);
+
     cccam_log(LOG_DEBUG, "CCshare: Adicionada CW para CAID %04X SID %04X (hop %d, expira em %lds)", 
               caid, sid, hop, entry->expires_at - time(NULL));
     
@@ -179,6 +189,8 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
         return 0;
     }
 
+    pthread_mutex_lock(&g_cache_mutex);
+
     time_t now = time(NULL);
     cache_entry_t *current = g_cache_head;
 
@@ -190,6 +202,7 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
                 current = current->next;
                 cache_free_entry(expired);
                 __atomic_add_fetch(&g_cache_misses, 1, __ATOMIC_RELAXED);
+                pthread_mutex_unlock(&g_cache_mutex);
                 return 0;
             }
             
@@ -201,6 +214,7 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
             cache_move_to_head(current);
             
             cccam_log(LOG_DEBUG, "CCshare: HIT para CAID %04X SID %04X (hop %d)", caid, sid, *hop);
+            pthread_mutex_unlock(&g_cache_mutex);
             return 1;
         }
         current = current->next;
@@ -208,10 +222,12 @@ int cccam_cache_find(uint16_t caid, uint16_t provid, uint16_t sid,
 
     __atomic_add_fetch(&g_cache_misses, 1, __ATOMIC_RELAXED);
     cccam_log(LOG_DEBUG, "CCshare: MISS para CAID %04X SID %04X", caid, sid);
+    pthread_mutex_unlock(&g_cache_mutex);
     return 0;
 }
 
 int cccam_cache_remove(uint16_t caid, uint16_t provid, uint16_t sid) {
+    pthread_mutex_lock(&g_cache_mutex);
     cache_entry_t *current = g_cache_head;
 
     while (current) {
@@ -220,17 +236,22 @@ int cccam_cache_remove(uint16_t caid, uint16_t provid, uint16_t sid) {
             current = current->next;
             cache_free_entry(removed);
             cccam_log(LOG_DEBUG, "CCshare: Removida entrada para CAID %04X SID %04X", caid, sid);
+            pthread_mutex_unlock(&g_cache_mutex);
             return 1;
         }
         current = current->next;
     }
 
+    pthread_mutex_unlock(&g_cache_mutex);
     return 0;
 }
 
 int cccam_cache_clean_expired(void) {
     int removed = 0;
     time_t now = time(NULL);
+
+    pthread_mutex_lock(&g_cache_mutex);
+
     cache_entry_t *current = g_cache_head;
 
     while (current) {
@@ -241,6 +262,8 @@ int cccam_cache_clean_expired(void) {
         }
         current = next;
     }
+
+    pthread_mutex_unlock(&g_cache_mutex);
 
     if (removed > 0) {
         cccam_log(LOG_DEBUG, "CCshare: Removidas %d entradas expiradas", removed);

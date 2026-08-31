@@ -6,6 +6,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <pthread.h>
 
 // Algoritmos por sistema de acesso condicional
 int cccam_emu_viaccess_ecm(const uint8_t *ecm, uint16_t ecm_len, uint8_t *dw);
@@ -37,6 +38,10 @@ static cccam_emu_key_t *g_emu_keys = NULL;
 static int g_emu_key_count = 0;
 static char g_emu_key_file[256] = "conf/SoftCam.Key";
 static int g_emu_initialized = 0;
+
+// As chaves são consultadas por várias threads (ECMs) e atualizadas por
+// EMMs (processamento local) — mutex próprio
+static pthread_mutex_t g_emu_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void cccam_emu_set_key_file(const char *path) {
     if (path && path[0] != '\0') {
@@ -78,6 +83,8 @@ static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
         return;
     }
 
+    pthread_mutex_lock(&g_emu_mutex);
+
     // Substitui chave idêntica existente
     cccam_emu_key_t *current = g_emu_keys;
     while (current) {
@@ -86,13 +93,17 @@ static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
             memcpy(current->data, data, data_len);
             current->data_len = data_len;
             current->date = date;
+            pthread_mutex_unlock(&g_emu_mutex);
             return;
         }
         current = current->next;
     }
 
     cccam_emu_key_t *key = calloc(1, sizeof(cccam_emu_key_t));
-    if (!key) return;
+    if (!key) {
+        pthread_mutex_unlock(&g_emu_mutex);
+        return;
+    }
 
     key->type = type;
     key->provider = provider;
@@ -103,6 +114,8 @@ static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
     key->next = g_emu_keys;
     g_emu_keys = key;
     g_emu_key_count++;
+
+    pthread_mutex_unlock(&g_emu_mutex);
 }
 
 // Data atual em formato YYYYMMDD
@@ -129,18 +142,24 @@ int cccam_emu_find_key(char type, uint32_t provider, const char *key_name,
         index = (uint8_t)strtoul(key_name, NULL, 16);
     }
 
+    pthread_mutex_lock(&g_emu_mutex);
+
     cccam_emu_key_t *current = g_emu_keys;
     while (current) {
         if (current->type == type && current->provider == provider &&
             current->key_index == index && emu_key_valid(current)) {
             if (key_out && key_out_size >= current->data_len) {
                 memcpy(key_out, current->data, current->data_len);
+                pthread_mutex_unlock(&g_emu_mutex);
                 return current->data_len;
             }
+            pthread_mutex_unlock(&g_emu_mutex);
             return 0;
         }
         current = current->next;
     }
+
+    pthread_mutex_unlock(&g_emu_mutex);
     return 0;
 }
 
@@ -255,13 +274,17 @@ int cccam_emu_init(void) {
 }
 
 int cccam_emu_reload(void) {
-    cccam_emu_key_t *old = g_emu_keys;
-    int old_count = g_emu_key_count;
+    cccam_emu_key_t *old;
+    int old_count;
 
-    // Recarrega num armazenamento novo; só troca se o ficheiro for válido
+    pthread_mutex_lock(&g_emu_mutex);
+    old = g_emu_keys;
+    old_count = g_emu_key_count;
     g_emu_keys = NULL;
     g_emu_key_count = 0;
+    pthread_mutex_unlock(&g_emu_mutex);
 
+    // Recarrega num armazenamento novo; só troca se o ficheiro for válido
     if (emu_load_key_file(g_emu_key_file) == 0) {
         // Liberta as chaves antigas
         cccam_emu_key_t *current = old;
@@ -276,8 +299,10 @@ int cccam_emu_reload(void) {
     }
 
     // Falha ao carregar: mantém as chaves antigas
+    pthread_mutex_lock(&g_emu_mutex);
     g_emu_keys = old;
     g_emu_key_count = old_count;
+    pthread_mutex_unlock(&g_emu_mutex);
     cccam_log(LOG_WARN, "EMU: Falha ao recarregar SoftCam.Key (chaves antigas mantidas)");
     return -1;
 }

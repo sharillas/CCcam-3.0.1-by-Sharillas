@@ -21,40 +21,26 @@ static int g_ecm_cache_misses = 0;
 static int g_ecm_reader_success = 0;
 static int g_ecm_reader_fail = 0;
 
-// Protege os subsistemas partilhados entre as threads que processam ECMs
-// (loop principal, DVBAPI por ligação, leitor DVB).
-// ORDEM DE LOCKS: nunca adquirir outro mutex (ex.: handshake) com o
-// g_ecm_mutex em espera inversa — a ordem estabelecida é ecm -> handshake.
-static pthread_mutex_t g_ecm_mutex = PTHREAD_MUTEX_INITIALIZER;
-
+// A cache tem o seu próprio mutex e cada leitor tem o seu: ECMs de
+// threads diferentes processam em paralelo. Estes wrappers mantêm-se
+// por compatibilidade da API.
 void cccam_ecm_lock(void) {
-    pthread_mutex_lock(&g_ecm_mutex);
 }
 
 void cccam_ecm_unlock(void) {
-    pthread_mutex_unlock(&g_ecm_mutex);
 }
 
 int cccam_ecm_clean_expired_cache(void) {
-    int removed;
-    cccam_ecm_lock();
-    removed = cccam_cache_clean_expired();
-    cccam_ecm_unlock();
-    return removed;
+    return cccam_cache_clean_expired();
 }
 
 int cccam_ecm_forward_emm(uint16_t caid, uint16_t provid,
                           const uint8_t *emm_data, uint16_t emm_len) {
-    int sent;
-
     // 1. Processa o EMM localmente (atualização de chaves EMU: Irdeto)
     cccam_emu_process_emm(caid, emm_data, emm_len);
 
     // 2. Reencaminha para os leitores remotos (AU dos cartões do share)
-    cccam_ecm_lock();
-    sent = cccam_card_manager_send_emm(caid, provid, emm_data, emm_len);
-    cccam_ecm_unlock();
-    return sent;
+    return cccam_card_manager_send_emm(caid, provid, emm_data, emm_len);
 }
 
 // --- Funções Auxiliares Internas ---
@@ -100,9 +86,7 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
         return -1;
     }
 
-    // Serializa o acesso à cache, aos leitores e ao controlo de hops
-    cccam_ecm_lock();
-
+    // A cache e os leitores têm mutexes próprios (paralelismo entre ECMs)
     __atomic_add_fetch(&g_ecm_total_requests, 1, __ATOMIC_RELAXED);
     
     char info[64];
@@ -129,14 +113,12 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
             cccam_log(LOG_WARN, "CCshare: ECM %s - HOP BLOQUEADO (servir hop %d, limite do cliente %d)",
                       info, served_hop, request->hop);
             response->found = 0;
-            cccam_ecm_unlock();
             return -1;
         }
         response->found = 1;
         response->hop = served_hop;
         __atomic_add_fetch(&g_ecm_cache_hits, 1, __ATOMIC_RELAXED);
         cccam_log(LOG_DEBUG, "CCshare: ECM %s - CACHE HIT (hop %d)", info, served_hop);
-        cccam_ecm_unlock();
         return 0;
     }
     __atomic_add_fetch(&g_ecm_cache_misses, 1, __ATOMIC_RELAXED);
@@ -159,7 +141,6 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
             cccam_log(LOG_WARN, "CCshare: ECM %s - HOP BLOQUEADO (servir hop %d, limite do cliente %d)",
                       info, served_hop, request->hop);
             response->found = 0;
-            cccam_ecm_unlock();
             return -1;
         }
 
@@ -174,7 +155,6 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
         
         cccam_log(LOG_DEBUG, "CCshare: ECM %s - READER SUCCESS (hop %d, reader %u)", 
                   info, served_hop, reader_id);
-        cccam_ecm_unlock();
         return 0;
     }
 
@@ -182,7 +162,6 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
     __atomic_add_fetch(&g_ecm_reader_fail, 1, __ATOMIC_RELAXED);
     response->found = 0;
     cccam_log(LOG_WARN, "CCshare: ECM %s - READER FAIL (código %d)", info, reader_result);
-    cccam_ecm_unlock();
     return -1;
 }
 
