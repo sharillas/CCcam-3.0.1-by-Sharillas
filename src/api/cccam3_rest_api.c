@@ -106,7 +106,15 @@ static void send_unauthorized(int client_fd) {
 }
 
 static void send_json_response(int client_fd, const char *json) {
-    send_http_response(client_fd, 200, "OK", "application/json", json);
+    // Os fragmentos (ex.: "server": {...}) são embrulhados num objeto
+    // JSON válido; respostas já completas (começam em '{') passam diretas
+    if (json[0] == '{') {
+        send_http_response(client_fd, 200, "OK", "application/json", json);
+        return;
+    }
+    char wrapped[16384];
+    snprintf(wrapped, sizeof(wrapped), "{\n%s\n}", json);
+    send_http_response(client_fd, 200, "OK", "application/json", wrapped);
 }
 
 static void send_not_found(int client_fd, const char *path) {
