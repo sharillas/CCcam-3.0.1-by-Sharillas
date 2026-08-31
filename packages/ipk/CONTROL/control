@@ -1,0 +1,11 @@
+Package: enigma2-plugin-softcams-cccam3
+Version: 3.0.1
+Section: softcams
+Priority: optional
+Architecture: all
+Maintainer: Sharillas <sharillas@users.noreply.github.com>
+Description: CCcam3 - servidor de cardsharing para enigma2
+ Servidor de cardsharing com clientes CCcam/Newcamd, leitores remotos,
+ leitor DVB S/S2/C/C2, API REST e painel web.
+ Binarios totalmente estaticos (sem dependencias de libc/openssl).
+ Instalavel em OpenPLi/OpenATV/OpenViX (OE 1.6/2.0 ou superior).

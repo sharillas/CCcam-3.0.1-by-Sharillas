@@ -1,0 +1,50 @@
+#!/bin/sh
+# CCcam3 - script de arranque enigma2 (SysVinit / busybox)
+# Uso: /etc/init.d/cccam3 {start|stop|restart|status}
+
+DAEMON=/usr/bin/cccam3
+CONF=/etc/cccam3/cccam3.conf
+PIDFILE=/var/run/cccam3.pid
+
+case "$1" in
+    start)
+        if [ ! -x "$DAEMON" ]; then
+            echo "cccam3: binario em falta ($DAEMON)"
+            exit 1
+        fi
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat $PIDFILE 2>/dev/null)" 2>/dev/null; then
+            echo "cccam3: ja em execucao (pid $(cat $PIDFILE))"
+            exit 0
+        fi
+        $DAEMON -c $CONF >/dev/null 2>&1 &
+        echo $! > $PIDFILE
+        echo "cccam3: iniciado (pid $(cat $PIDFILE))"
+        ;;
+    stop)
+        if [ -f "$PIDFILE" ]; then
+            kill "$(cat $PIDFILE 2>/dev/null)" 2>/dev/null
+            rm -f "$PIDFILE"
+            echo "cccam3: parado"
+        else
+            echo "cccam3: nao esta em execucao"
+        fi
+        ;;
+    restart)
+        $0 stop
+        sleep 1
+        $0 start
+        ;;
+    status)
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat $PIDFILE 2>/dev/null)" 2>/dev/null; then
+            echo "cccam3 a correr (pid $(cat $PIDFILE))"
+        else
+            echo "cccam3 parado"
+        fi
+        ;;
+    *)
+        echo "Uso: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit 0

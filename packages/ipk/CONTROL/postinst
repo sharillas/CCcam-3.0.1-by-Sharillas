@@ -1,0 +1,46 @@
+#!/bin/sh
+# CCcam3 - postinst (POSIX sh / busybox)
+# Copia o binario correto, prepara as configuracoes e inicia o servico.
+
+BINDIR=/usr/bin
+CONFDIR=/etc/cccam3
+DEFDIR=/usr/share/cccam3
+
+# Detetar arquitetura
+m=$(uname -m)
+case "$m" in
+    x86_64|amd64)        arch=x86_64 ;;
+    i686|i586|i386)      arch=x86_32 ;;
+    aarch64|arm64)       arch=aarch64 ;;
+    armv7l|armv6l)       arch=armv7 ;;
+    mips)                arch=mipsel ;;
+    mips64)              arch=mips64el ;;
+    *)                   arch="" ;;
+esac
+
+if [ -n "$arch" ] && [ -f "$BINDIR/cccam3-$arch" ]; then
+    cp -f "$BINDIR/cccam3-$arch" "$BINDIR/cccam3"
+    chmod 0755 "$BINDIR/cccam3"
+else
+    echo "cccam3: arquitetura nao suportada ($m)"
+fi
+
+# Configuracoes de exemplo (nao sobrescrevem as existentes)
+mkdir -p "$CONFDIR"
+for f in cccam3.conf cccam3.users cccam3.readers; do
+    if [ ! -f "$CONFDIR/$f" ] && [ -f "$DEFDIR/$f" ]; then
+        cp "$DEFDIR/$f" "$CONFDIR/$f"
+    fi
+done
+
+# Log em tmpfs (preserva a flash) se existir /var/volatile/log
+if [ -d /var/volatile/log ] && [ -f "$CONFDIR/cccam3.conf" ]; then
+    sed -i 's|^file = /var/log/cccam3.log|file = /var/volatile/log/cccam3.log|' "$CONFDIR/cccam3.conf"
+fi
+
+# Iniciar (saltar durante a construcao de imagem: variavel $D definida)
+if [ -z "$D" ] && [ -x /etc/init.d/cccam3 ]; then
+    /etc/init.d/cccam3 start
+fi
+
+exit 0

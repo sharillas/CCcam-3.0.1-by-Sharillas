@@ -98,6 +98,24 @@ if [ "$FROM_SOURCE" -eq 0 ] && [ -z "$ARCH" ]; then
     exit 1
 fi
 
+# --- Boxes enigma2 (OpenPLi/OpenATV/OpenViX): instalar via .ipk ---
+if [ "$FROM_SOURCE" -eq 0 ] && command -v opkg >/dev/null 2>&1; then
+    echo ">> Box enigma2 detetada - a instalar o pacote .ipk..."
+    IPK_VERSION=$(echo "$VERSION" | sed 's/^v//')
+    IPK="enigma2-plugin-softcams-cccam3_${IPK_VERSION}_all.ipk"
+    download "$RELEASE_URL/$IPK" "/tmp/$IPK" || {
+        echo "ERRO: falha a descarregar o pacote."
+        exit 1
+    }
+    opkg install --force-overwrite "/tmp/$IPK"
+    rm -f "/tmp/$IPK"
+    echo ""
+    echo ">> Instalado! Configuração em /etc/cccam3/"
+    echo ">> Controlo: Menu > Plugins > CCcam3  ou  /etc/init.d/cccam3 {start|stop|restart|status}"
+    echo ">> Painel web: http://IP-da-box:8080/web"
+    exit 0
+fi
+
 echo "=============================================="
 echo " CCcam3 $VERSION - Instalação"
 if [ "$FROM_SOURCE" -eq 1 ]; then

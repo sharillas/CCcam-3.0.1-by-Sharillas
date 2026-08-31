@@ -1,0 +1,8 @@
+#!/bin/sh
+# CCcam3 - prerm (para o servico antes de remover/atualizar)
+
+if [ -x /etc/init.d/cccam3 ]; then
+    /etc/init.d/cccam3 stop 2>/dev/null
+fi
+
+exit 0

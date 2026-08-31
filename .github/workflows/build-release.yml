@@ -102,3 +102,53 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "$RELEASE_TAG" cccam3-${{ matrix.name }} --clobber
+
+      - name: Upload artifact for ipk
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.name }}
+          path: cccam3-${{ matrix.name }}
+
+  ipk:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+          path: bins
+
+      - name: Assemble ipk
+        run: |
+          mkdir -p ipkdata/etc/init.d \
+                   ipkdata/usr/bin \
+                   ipkdata/usr/share/cccam3 \
+                   ipkdata/usr/lib/enigma2/python/Plugins/Extensions/CCcam3 \
+                   ipkctrl
+          cp packages/ipk/CONTROL/control ipkctrl/control
+          cp packages/ipk/CONTROL/postinst ipkctrl/postinst
+          cp packages/ipk/CONTROL/prerm ipkctrl/prerm
+          chmod 0755 ipkctrl/postinst ipkctrl/prerm
+          cp packages/ipk/etc/init.d/cccam3 ipkdata/etc/init.d/cccam3
+          chmod 0755 ipkdata/etc/init.d/cccam3
+          cp packages/ipk/usr/lib/enigma2/python/Plugins/Extensions/CCcam3/plugin.py \
+             ipkdata/usr/lib/enigma2/python/Plugins/Extensions/CCcam3/plugin.py
+          cp examples/cccam3.conf ipkdata/usr/share/cccam3/cccam3.conf
+          cp examples/cccam3.users ipkdata/usr/share/cccam3/cccam3.users
+          cp examples/cccam3.readers ipkdata/usr/share/cccam3/cccam3.readers
+          cp bins/bin-*/cccam3-* ipkdata/usr/bin/
+          ls -la ipkdata/usr/bin/
+          cd ipkctrl && tar czf ../control.tar.gz . && cd ..
+          cd ipkdata && tar czf ../data.tar.gz . && cd ..
+          echo "2.0" > debian-binary
+          ar r enigma2-plugin-softcams-cccam3_3.0.1_all.ipk debian-binary control.tar.gz data.tar.gz
+          ls -la enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+
+      - name: Upload ipk to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE_TAG" enigma2-plugin-softcams-cccam3_3.0.1_all.ipk --clobber
