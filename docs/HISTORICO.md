@@ -575,3 +575,85 @@ bloqueio por leitores remotos lentos).
 - PowerVU: áudio multiplex (cw_ex) não suportado — só vídeo CSA.
 - Newcamd sem proteção anti-bruteforce de login (só filtros de IP e a
   proteção do protocolo próprio).
+
+---
+
+## 22. Painel Web Profissional + Produção na VPS — Versão Estável 3.0.1 (2026)
+
+### 22.1 Branding e build automático
+
+- **Header**: `CCcam 3.0.1 by Sharillas@2026` (versão dinâmica).
+- **Footer**: `CCcam <versão> - build.v<DD>.<MM>.<AAAA>.<HH>:<MM> - All rights reserved - Sharillas@2026`.
+- O build-id é derivado de `__DATE__`/`__TIME__` (`cccam3_build_id()` em
+  `cccam3_utils.c`) — atualiza automaticamente a cada compilação. O HTML
+  usa placeholders `__VERSION__`/`__BUILD__` substituídos no serve.
+
+### 22.2 Canais por cliente (CCcam.providers / CCcam.channelinfo)
+
+- Novo módulo `src/CCshare/cccam3_channels.c/.h`: carrega os dois
+  ficheiros com mutex e lookup com fallback (exato → provid 0000 →
+  caid 0000).
+- Ficheiros criados com base curada: **Astra 19.2E** (TNTSAT, Sky DE,
+  HD+, ORF, Canal Digitaal), **Hotbird 13E** (Sky Italia, RAI, Mediaset,
+  Polsat, TVN/TVP, NC+, BIS, Nova) e **Hispasat 30W** (MEO, NOS/Sport TV,
+  Movistar+) + **TDT Abertis (40 muxes BISS)** + feeds PowerVU/BISS.
+- O servidor regista o canal atual de cada cliente (`cur_caid`/`cur_sid`
+  do último ECM, via `client_id` — cobre CCcam e Newcamd) → coluna
+  **Canal** na tabela de clientes (nome + provedor).
+- Nota: os SIDs são uma base conhecida e podem mudar; os ficheiros têm
+  cabeçalho a recomendar atualização pelos pacotes da comunidade.
+
+### 22.3 ECM OK / NOK na tabela de clientes
+
+- `cccam_client_t` ganhou `ecm_ok`; o processamento de ECM conta
+  total + sucessos por cliente (`cccam3_ecm.c`), incluindo Newcamd.
+- JSON `/clients` expõe `ecm_total`, `ecm_ok`, `ecm_fail` → colunas
+  verdes/vermelhas no painel.
+
+### 22.4 Editor de ficheiros no painel
+
+- Nova secção **Ficheiros**: edita no navegador `cccam3.conf`,
+  `cccam3.users`, `cccam3.readers`, `SoftCam.Key`, `CCcam.providers` e
+  `CCcam.channelinfo`.
+- REST ganhou suporte a **POST com corpo** (`Content-Length`) e novas
+  rotas: `GET /files`, `GET /files/get?name=`, `POST /files/save?name=`.
+- Escrita atómica (tmp + rename) com whitelist de nomes (anti path
+  traversal) e reload automático: users/readers/SoftCam.Key/channels
+  recarregam em runtime; `cccam3.conf` guarda com aviso de reinício.
+
+### 22.5 Login por formulário no painel
+
+- O `/web` passou a ser público (HTML estático); a API continua com
+  autenticação Basic.
+- Formulário de login no painel: o JS guarda o token (base64) em
+  `sessionStorage` e envia `Authorization` em cada fetch — os browsers
+  não herdam credenciais Basic em `fetch()`.
+- 401 inclui agora `WWW-Authenticate` (antes o browser mostrava só o
+  texto "Unauthorized").
+
+### 22.6 Bugs reais encontrados em produção (e corrigidos)
+
+| # | Bug | Correção |
+|---|---|---|
+| 1 | Respostas JSON **inválidas**: endpoints devolviam fragmentos (`"server": {...}`) sem a chaveta de abertura → o browser falhava no `r.json()` e o painel ficava "a ligar…" | `send_json_response` embrulha fragmentos em `{ ... }`; validado com `python3 -m json.tool` em todos os endpoints |
+| 2 | **Bloqueio do painel** por ligação parada (scanner): o accept loop é sequencial e uma ligação sem `\r\n\r\n` bloqueava a API toda (backlog a encher) | `SO_RCVTIMEO`/`SO_SNDTIMEO` de 10 s por ligação |
+| 3 | `strcasestr` sem `_GNU_SOURCE` — declaração implícita truncava o ponteiro | `#define _GNU_SOURCE` antes dos includes |
+
+### 22.7 Operação em produção
+
+- **Wrapper de controlo** `scripts/cccam3` (instalado pelo `install.sh`
+  como `/usr/local/bin/cccam3`, binário em `cccam3.bin`):
+  `cccam3 start|stop|restart|status|log` funciona de qualquer pasta;
+  qualquer outro argumento passa ao servidor.
+- **VPS em produção**: `https://c3.smartvideo.tech/web` (nginx + Let's
+  Encrypt, subdomínio dedicado ao projeto) com portas próprias para não
+  colidir com os outros projetos da VPS (Multics, PostgreSQL, nginx):
+  painel **2026**, CCcam **21200**, Newcamd **21340**.
+- `configs/` atualizada com as cópias de `CCcam.providers` e
+  `CCcam.channelinfo`; `web-preview.html` reflete o painel final
+  (header/footer, coluna Canal, ECM OK/NOK, editor de ficheiros, login).
+
+### 22.8 Estado
+
+**Versão 3.0.1 estável em produção.** Versões futuras (3.0.2, …) saem de
+implementações novas sobre esta base estável.

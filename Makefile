@@ -75,11 +75,14 @@ clean:
 	@echo "🧹 Ficheiros objetos e binários removidos."
 
 install: $(TARGET)
-	cp $(TARGET) /usr/local/bin/
-	@echo "✅ CCcam3 instalado em /usr/local/bin/"
+	cp $(TARGET) /usr/local/bin/cccam3.bin
+	cp scripts/cccam3 /usr/local/bin/cccam3
+	chmod 0755 /usr/local/bin/cccam3
+	@echo "✅ CCcam3 instalado em /usr/local/bin/ (cccam3.bin + wrapper cccam3)"
+	@echo "   Controlo: cccam3 start|stop|restart|status|log"
 
 uninstall:
-	rm -f /usr/local/bin/cccam3
+	rm -f /usr/local/bin/cccam3 /usr/local/bin/cccam3.bin
 	@echo "🗑️ CCcam3 removido."
 
 docs:
@@ -90,7 +93,7 @@ docs:
 dist: clean docs
 	@echo "📦 Criando pacote de distribuição..."
 	mkdir -p dist/cccam3
-	cp -r src include conf docs Makefile README.md LICENSE dist/cccam3/
+	cp -r src include conf configs scripts docs Makefile README.md LICENSE dist/cccam3/
 	cd dist && tar -czf cccam3-$(shell date +%Y%m%d).tar.gz cccam3/
 	@echo "✅ Pacote criado em dist/cccam3-$(shell date +%Y%m%d).tar.gz"
 
