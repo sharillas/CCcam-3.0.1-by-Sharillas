@@ -465,3 +465,62 @@ Distribuição para boxes enigma2 (OpenPLi/OpenATV/OpenViX) via opkg:
 - Sem rate-limiting no login (bruteforce). Mitigação: passwords fortes e
   `[rest_api] user/password` ativado.
 - Em modo DEBUG o log inclui CWs — usar INFO em produção.
+
+---
+
+## 20. Servidor EMU para Boxes — DVBAPI multi-CA, EMM e Mais Sistemas (2026)
+
+O foco passou a ser um **servidor EMU puro**: a box envia os ECMs por
+DVBAPI e recebe as CWs (sem leitores de cartões locais como prioridade).
+
+### 20.1 EMU expandida
+
+| Sistema | CAID | Chaves (SoftCam.Key) | Notas |
+|---|---|---|---|
+| BISS | 2600/2602 | `F 2600<SID> 00 <sw>` | Abertis/TDT no 30W, feeds |
+| Viaccess | 0500 | `F/I/T <ident> <idx> <key>` | Via 1/2.6/3 + HD sur-encryption |
+| **Cryptoworks** | 0D00/0D02/0D03/0D05 | `W <ident> <idx> <key>` | ORF Digital/AustriaSat (19.2E) — port do oscam-emu |
+| **PowerVU** | 0E00 | `P <provider> <00/01> <key7>` | Feeds (AMC 30W) — caminho ECM em modo CSA (sem EMM AU/stream server) |
+
+- **Chaves com data**: linhas `T ... <YYYYMMDD hex>` e linhas BISS
+  `F <provider8> <YYYYMMDD> <key>` expiram automaticamente.
+- **Recarga em runtime**: `kill -HUP <pid>` (ou `systemctl reload cccam3`)
+  recarrega o SoftCam.Key sem reiniciar.
+- Log da chave usada em cada CW EMU (DEBUG).
+
+### 20.2 DVBAPI multi-CA
+
+- O PMT é analisado por completo: **todos** os descritores CA (CAID,
+  ECM PID e PROVID correto por sistema — Viaccess/Nagra/Irdeto/Seca/
+  Cryptoworks, como no OSCam `dvbapi_add_ecmpid`).
+- **DMX_SET_FILTER por cada ECM PID** (números de filtro distintos);
+  o FILTER_DATA usa o nº do filtro para escolher o CAID.
+- **Fallback automático entre sistemas**: a box manda ECMs de todos os
+  CAIDs; o primeiro que a EMU resolver abre o canal.
+
+### 20.3 EMM para o share (cartões reais do outro lado)
+
+Os EMMs recebidos são **reencaminhados para os leitores remotos** (os
+servidores com cartões reais — é o mecanismo AU que mantém os direitos
+dos cartões vivos):
+
+- **Protocolo CCcam3**: nova mensagem `CCCAM_MSG_EMM` (0x05)
+  [caid 2][provid 2][dados]; os clientes podem enviar EMMs.
+- **Newcamd**: comando EMM (0xEB) reencaminhado.
+- **DVBAPI**: filtro do CAT (PID 0x0001) → EMM PIDs do CAID negociado
+  → filtros de EMM → FILTER_DATA reencaminhado.
+- **Tuner interno**: demux extra para CAT/EMM (demux N+2) com os EMMs
+  do transponder reencaminhados.
+- Tudo serializado pelo mutex de ECM (`cccam_ecm_forward_emm`).
+
+### 20.4 Leitor DVB interno: T/T2
+
+- `delivery_system = dvb-t | dvb-t2` e `bandwidth = 6|7|8` (MHz) na config.
+- Auto-deteção de frontends OFDM (T/T2) quando `delivery_system = auto`.
+
+### 20.5 Limitações
+
+- PowerVU: só o modo CSA (vídeo); sem EMM AU (as chaves 'P' têm de vir
+  já derivadas no SoftCam.Key, como nos pacotes da comunidade) e sem
+  descodificação de áudio multiplex (cw_ex).
+- EMM: um único EMM PID por canal no tuner interno (primeiro do CAT).
