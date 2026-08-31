@@ -674,6 +674,7 @@ static int handle_client_ecm(cccam_client_t *client, const void *payload, size_t
                   client->username, g_config.max_ecm_per_sec);
         return 0;
     }
+    __atomic_add_fetch(&client->ecm_total, 1, __ATOMIC_RELAXED);
 
     cccam_ecm_request_t request;
     if (parse_ecm_payload(payload, payload_len, &request) != 0) {

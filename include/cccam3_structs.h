@@ -33,6 +33,7 @@ typedef struct {
     int to_kick;               // Marca para desligar (definido pela API REST)
     time_t ecm_window_start;   // Rate limit de ECMs por cliente
     int ecm_window_count;
+    uint32_t ecm_total;        // Total de ECMs pedidos (para o painel)
     uint8_t node_id[8];
     struct sockaddr_in addr;
     cccam_crypto_ctx_t crypto;

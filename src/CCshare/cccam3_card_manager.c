@@ -866,8 +866,19 @@ int cccam_card_manager_load_from_config(const char *config_file) {
     return 0;
 }
 
-int cccam_card_manager_reload(void) {
-    // Fecha e liberta os leitores atuais
+cccam_reader_t *cccam_card_manager_get_by_index(int index) {
+    cccam_reader_t *current = g_readers;
+    for (int i = 0; current && i < index; i++) {
+        current = current->next;
+    }
+    return current;
+}
+
+int cccam_card_manager_get_count(void) {
+    return g_reader_count;
+}
+
+int cccam_card_manager_reload(void) {    // Fecha e liberta os leitores atuais
     cccam_reader_t *current = g_readers;
     while (current) {
         cccam_reader_t *next = current->next;

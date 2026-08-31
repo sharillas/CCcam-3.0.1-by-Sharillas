@@ -212,6 +212,8 @@ static void json_server_status(char *buffer, size_t size) {
     int client_count = cccam_client_get_count();
     uint8_t hop_limit = cccam_hop_control_get_limit();
     cccam_config_t *config = cccam_get_config();
+    time_t started_at = config ? 0 : 0;
+    (void)started_at;
     
     snprintf(buffer, size,
         "\"server\": {\n"
@@ -222,11 +224,37 @@ static void json_server_status(char *buffer, size_t size) {
         "    \"clients\": %d,\n"
         "    \"hop_limit\": %d,\n"
         "    \"port\": %d,\n"
+        "    \"newcamd_port\": %d,\n"
         "    \"rest_port\": %d\n"
         "  }",
         config->server_name, CCCAM3_VERSION, time_str, client_count, hop_limit,
-        config->listen_port, g_rest_api_port
+        config->listen_port, config->newcamd_port, g_rest_api_port
     );
+}
+
+// Lista de leitores (nome, tipo, estado, caid, hop, prioridade, ECMs)
+static void json_readers_list(char *buffer, size_t size) {
+    size_t used = 0;
+    int count = cccam_card_manager_get_count();
+    used += (size_t)snprintf(buffer + used, size - used,
+        "\"readers_list\": {\n"
+        "    \"count\": %d,\n"
+        "    \"list\": [\n", count);
+
+    for (int i = 0; i < count; i++) {
+        cccam_reader_t *r = cccam_card_manager_get_by_index(i);
+        if (!r) continue;
+        if (used + 256 > size) break;
+        used += (size_t)snprintf(buffer + used, size - used,
+            "%s      { \"name\": \"%s\", \"type\": %d, \"state\": %d, "
+            "\"caid\": %u, \"hop\": %d, \"priority\": %d, "
+            "\"ecm_requests\": %u, \"ecm_success\": %u, \"ecm_fail\": %u }",
+            i > 0 ? ",\n" : "",
+            r->name, (int)r->type, (int)r->state,
+            r->caid, r->hop, r->priority,
+            r->ecm_requests, r->ecm_success, r->ecm_fail);
+    }
+    snprintf(buffer + used, size - used, "\n    ]\n  }");
 }
 
 static void json_channels(char *buffer, size_t size) {
@@ -311,14 +339,16 @@ static void json_clients(char *buffer, size_t size) {
 
         used += (size_t)snprintf(buffer + used, size - used,
             "%s      { \"id\": %u, \"user\": \"%s\", \"ip\": \"%s\", "
-            "\"newcamd\": %d, \"authenticated\": %d, \"connected_at\": %ld }",
+            "\"newcamd\": %d, \"authenticated\": %d, \"connected_at\": %ld, "
+            "\"ecm_total\": %u }",
             first ? "" : ",\n",
             client->client_id,
             client->username[0] != '\0' ? client->username : "-",
             inet_ntoa(client->addr.sin_addr),
             client->is_newcamd,
             client->is_authenticated,
-            (long)client->connected_at);
+            (long)client->connected_at,
+            client->ecm_total);
         first = 0;
     }
     snprintf(buffer + used, size - used, "\n    ]\n  }");
@@ -453,6 +483,9 @@ static void handle_request(int client_fd, char *request, size_t request_len) {
         } else {
             send_json_response(client_fd, "{\"result\": \"missing_name\"}");
         }
+    } else if (strcmp(path, "/readers") == 0) {
+        json_readers_list(json, sizeof(json));
+        send_json_response(client_fd, json);
     } else if (strcmp(path, "/users") == 0) {
         json_users(json, sizeof(json));
         send_json_response(client_fd, json);

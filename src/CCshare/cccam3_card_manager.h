@@ -108,6 +108,12 @@ int cccam_card_manager_update_state(uint32_t reader_id, cccam_reader_state_t sta
 void cccam_card_manager_get_stats(int *total_readers, int *active_readers, 
                                   int *local_readers, int *remote_readers);
 
+// Obtém um leitor pelo índice (para listagens da API REST)
+cccam_reader_t *cccam_card_manager_get_by_index(int index);
+
+// Número de leitores
+int cccam_card_manager_get_count(void);
+
 // Carrega leitores a partir de um ficheiro de configuração
 int cccam_card_manager_load_from_config(const char *config_file);
 
