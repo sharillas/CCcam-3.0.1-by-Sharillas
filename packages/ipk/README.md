@@ -2,10 +2,24 @@
 
 Estrutura usada pela GitHub Action para gerar o pacote
 `enigma2-plugin-softcams-cccam3_3.0.1_all.ipk`, instalável em
-OpenPLi / OpenATV / OpenViX (OE 1.6/2.0 ou superior) com:
+OpenPLi / OpenATV / OpenViX (OE 1.6/2.0 ou superior).
 
+### Instalação na box (sem depender de wget/curl)
+
+```sh
+# Método 1 - opkg direto do URL:
+opkg install --force-overwrite https://github.com/sharillas/CCcam-3.0.1-by-Sharillas/releases/download/v3.0.1/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
 ```
-opkg install --force-overwrite /tmp/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+
+```sh
+# Método 2 - download com Python (existe em todas as boxes enigma2):
+python -c 'import sys
+if sys.version_info[0] >= 3:
+    from urllib.request import urlretrieve
+else:
+    from urllib import urlretrieve
+urlretrieve(sys.argv[1], "/tmp/cccam3.ipk")' https://github.com/sharillas/CCcam-3.0.1-by-Sharillas/releases/download/v3.0.1/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+opkg install --force-overwrite /tmp/cccam3.ipk
 ```
 
 ## Conteúdo do pacote

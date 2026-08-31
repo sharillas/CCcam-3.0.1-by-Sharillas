@@ -50,15 +50,22 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# --- Função de download (curl com fallback para wget) ---
+# --- Função de download (curl -> wget -> python) ---
 download() {
     url="$1"; dest="$2"
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL -o "$dest" "$url" || return 1
     elif command -v wget >/dev/null 2>&1; then
         wget -q -O "$dest" "$url" || return 1
+    elif command -v python >/dev/null 2>&1; then
+        python -c 'import sys
+if sys.version_info[0] >= 3:
+    from urllib.request import urlretrieve
+else:
+    from urllib import urlretrieve
+urlretrieve(sys.argv[1], sys.argv[2])' "$url" "$dest" || return 1
     else
-        echo "ERRO: nem curl nem wget disponíveis."
+        echo "ERRO: nem curl, nem wget, nem python disponiveis."
         return 1
     fi
 }
