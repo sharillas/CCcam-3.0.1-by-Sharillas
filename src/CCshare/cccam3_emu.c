@@ -14,6 +14,9 @@ int cccam_emu_biss_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
 int cccam_emu_cryptoworks_ecm(uint32_t caid, uint8_t *ecm, uint8_t *cw);
 int cccam_emu_powervu_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
                           uint16_t ecm_len, uint8_t *dw);
+int cccam_emu_nagravision_ecm(uint16_t caid, uint8_t *ecm, uint8_t *dw);
+int cccam_emu_irdeto_ecm(uint16_t caid, uint8_t *ecm, uint8_t *dw);
+int cccam_emu_irdeto_emm(uint16_t caid, const uint8_t *oemm, uint16_t emm_len);
 
 // --- Estrutura de Chaves ---
 
@@ -289,6 +292,46 @@ int cccam_emu_get_key_count(void) {
     return g_emu_key_count;
 }
 
+void cccam_emu_add_runtime_key(char type, uint32_t provider, const char *key_name,
+                               const uint8_t *data, uint8_t data_len, int persist) {
+    uint8_t index = 0;
+    if (key_name && key_name[0] != '\0') {
+        index = (uint8_t)strtoul(key_name, NULL, 16);
+    }
+
+    emu_add_key(type, provider, index, data, data_len, 0);
+
+    if (!persist) {
+        return;
+    }
+
+    // Persiste no ficheiro (anexa)
+    FILE *fp = fopen(g_emu_key_file, "a");
+    if (fp) {
+        fprintf(fp, "%c %06X %s ", type, provider, key_name ? key_name : "00");
+        for (int i = 0; i < data_len; i++) {
+            fprintf(fp, "%02X", data[i]);
+        }
+        fprintf(fp, "\n");
+        fclose(fp);
+        cccam_log(LOG_DEBUG, "EMU: Chave %c %06X %s persistida no SoftCam.Key",
+                  type, provider, key_name ? key_name : "00");
+    }
+}
+
+int cccam_emu_process_emm(uint16_t caid, const uint8_t *emm, uint16_t emm_len) {
+    if (!emm || emm_len < 8) {
+        return -1;
+    }
+
+    // Irdeto: EMM atualiza chaves (OP e PMK)
+    if ((caid & 0xFF00) == 0x0600 || caid == 0x4AE1 || caid == 0x4ABF) {
+        return cccam_emu_irdeto_emm(caid, emm, emm_len);
+    }
+
+    return -1;
+}
+
 // --- Dispatcher ---
 
 static int is_viaccess_caid(uint16_t caid) {
@@ -306,6 +349,14 @@ static int is_cryptoworks_caid(uint16_t caid) {
 
 static int is_powervu_caid(uint16_t caid) {
     return caid == 0x0E00;
+}
+
+static int is_nagra_caid(uint16_t caid) {
+    return (caid & 0xFF00) == 0x1800 || (caid & 0xFF00) == 0x1700;
+}
+
+static int is_irdeto_caid(uint16_t caid) {
+    return (caid & 0xFF00) == 0x0600 || caid == 0x4AE1 || caid == 0x4ABF;
 }
 
 int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
@@ -328,6 +379,18 @@ int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
     }
     if (is_powervu_caid(caid)) {
         return cccam_emu_powervu_ecm(caid, sid, ecm, ecm_len, cw);
+    }
+    if (is_nagra_caid(caid)) {
+        uint8_t ecm_copy[CCCAM_ECM_MAX_SIZE + 4];
+        if (ecm_len > sizeof(ecm_copy)) return CCCAM_EMU_CORRUPT_DATA;
+        memcpy(ecm_copy, ecm, ecm_len);
+        return cccam_emu_nagravision_ecm(caid, ecm_copy, cw);
+    }
+    if (is_irdeto_caid(caid)) {
+        uint8_t ecm_copy[CCCAM_ECM_MAX_SIZE + 4];
+        if (ecm_len > sizeof(ecm_copy)) return CCCAM_EMU_CORRUPT_DATA;
+        memcpy(ecm_copy, ecm, ecm_len);
+        return cccam_emu_irdeto_ecm(caid, ecm_copy, cw);
     }
 
     cccam_log(LOG_DEBUG, "EMU: Sistema CAID %04X não suportado", caid);

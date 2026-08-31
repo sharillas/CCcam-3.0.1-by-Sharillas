@@ -26,6 +26,11 @@ void cccam_emu_aes_decrypt_block(uint8_t *data, const uint8_t *key);
 // 3DES EDE (K1=key[0..7], K2=key[8..15], K3=K1): decripta 8 bytes
 void cccam_emu_des_ecb3_decrypt(uint8_t *data, const uint8_t *key);
 
+// DES EDE2 (K1, K2) em CBC: decripta len bytes (múltiplo de 8)
+void cccam_emu_des_ede2_cbc_decrypt(uint8_t *data, const uint8_t *iv,
+                                    const uint8_t *key1, const uint8_t *key2,
+                                    int len);
+
 // Verifica o checksum interno de uma CW (byte 3 = soma dos 3 primeiros)
 int cccam_emu_is_valid_dcw(const uint8_t *cw);
 

@@ -39,10 +39,13 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/CCshare/cccam3_user_manager.c \
           $(SRC_DIR)/CCshare/cccam3_emu.c \
           $(SRC_DIR)/CCshare/cccam3_emu_des.c \
+          $(SRC_DIR)/CCshare/cccam3_emu_idea.c \
           $(SRC_DIR)/CCshare/cccam3_emu_viaccess.c \
           $(SRC_DIR)/CCshare/cccam3_emu_viaccess_tables.c \
           $(SRC_DIR)/CCshare/cccam3_emu_cryptoworks.c \
           $(SRC_DIR)/CCshare/cccam3_emu_powervu.c \
+          $(SRC_DIR)/CCshare/cccam3_emu_nagravision.c \
+          $(SRC_DIR)/CCshare/cccam3_emu_irdeto.c \
           $(SRC_DIR)/api/cccam3_rest_api.c \
           $(SRC_DIR)/api/cccam3_web_interface.c
 

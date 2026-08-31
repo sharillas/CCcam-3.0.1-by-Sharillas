@@ -901,6 +901,33 @@ void cccam_emu_des_ecb3_decrypt(uint8_t *data, const uint8_t *key)
 	cccam_emu_des(data, ks1, 0);
 }
 
+void cccam_emu_des_ede2_cbc_decrypt(uint8_t *data, const uint8_t *iv,
+                                    const uint8_t *key1, const uint8_t *key2,
+                                    int len)
+{
+	uint8_t civ[2][8];
+	uint32_t ks1[32], ks2[32];
+	int i, n = 0;
+
+	cccam_emu_des_set_key(key1, ks1);
+	cccam_emu_des_set_key(key2, ks2);
+
+	len &= ~7;
+
+	memcpy(civ[n], iv, 8);
+	for (i = 0; i < len; i += 8, data += 8, n ^= 1)
+	{
+		memcpy(civ[1 - n], data, 8);
+		cccam_emu_des(data, ks1, 0);
+		cccam_emu_des(data, ks2, 1);
+		cccam_emu_des(data, ks1, 0);
+		for (int j = 0; j < 8; j++)
+		{
+			data[j] ^= civ[n][j];
+		}
+	}
+}
+
 int cccam_emu_is_valid_dcw(const uint8_t *cw)
 {
 	return cw[3] == (uint8_t)(cw[0] + cw[1] + cw[2]);

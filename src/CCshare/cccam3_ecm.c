@@ -5,6 +5,7 @@
 #include "cccam3_protocol.h"
 #include "cccam3_card_manager.h"
 #include "cccam3_hop_control.h"
+#include "cccam3_emu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,11 @@ int cccam_ecm_clean_expired_cache(void) {
 int cccam_ecm_forward_emm(uint16_t caid, uint16_t provid,
                           const uint8_t *emm_data, uint16_t emm_len) {
     int sent;
+
+    // 1. Processa o EMM localmente (atualização de chaves EMU: Irdeto)
+    cccam_emu_process_emm(caid, emm_data, emm_len);
+
+    // 2. Reencaminha para os leitores remotos (AU dos cartões do share)
     cccam_ecm_lock();
     sent = cccam_card_manager_send_emm(caid, provid, emm_data, emm_len);
     cccam_ecm_unlock();

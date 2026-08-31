@@ -32,6 +32,15 @@ int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
 // Número de chaves carregadas
 int cccam_emu_get_key_count(void);
 
+// Adiciona/atualiza uma chave em runtime (usado pelo processamento de EMMs).
+// Se persist == 1, acrescenta a linha ao SoftCam.Key.
+void cccam_emu_add_runtime_key(char type, uint32_t provider, const char *key_name,
+                               const uint8_t *data, uint8_t data_len, int persist);
+
+// Processa um EMM localmente (atualização de chaves EMU: Irdeto, Viaccess).
+// Devolve 0 se o EMM foi consumido, -1 caso contrário.
+int cccam_emu_process_emm(uint16_t caid, const uint8_t *emm, uint16_t emm_len);
+
 // Resultados internos do processamento de ECM (para estatísticas)
 #define CCCAM_EMU_OK             0
 #define CCCAM_EMU_NOT_SUPPORTED -1
