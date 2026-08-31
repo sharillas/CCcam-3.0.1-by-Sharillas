@@ -1,9 +1,11 @@
 #include "cccam3_emu.h"
+#include "cccam3_ecm.h"
 #include "cccam3_logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 // Algoritmos por sistema de acesso condicional
 int cccam_emu_viaccess_ecm(const uint8_t *ecm, uint16_t ecm_len, uint8_t *dw);
