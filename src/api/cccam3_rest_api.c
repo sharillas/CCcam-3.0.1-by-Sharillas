@@ -87,6 +87,24 @@ static void send_http_response(int client_fd, int code, const char *status,
     send_all(client_fd, body, body_len);
 }
 
+// 401 com WWW-Authenticate: sem este header o browser não mostra a caixa
+// de login e apresenta apenas o texto "Unauthorized"
+static void send_unauthorized(int client_fd) {
+    const char *body = "Unauthorized\n";
+    char header[512];
+    snprintf(header, sizeof(header),
+             "HTTP/1.1 401 Unauthorized\r\n"
+             "Content-Type: text/plain\r\n"
+             "WWW-Authenticate: Basic realm=\"CCcam3\", charset=\"UTF-8\"\r\n"
+             "Access-Control-Allow-Origin: *\r\n"
+             "Content-Length: %zu\r\n"
+             "Connection: close\r\n"
+             "\r\n",
+             strlen(body));
+    send_all(client_fd, header, strlen(header));
+    send_all(client_fd, body, strlen(body));
+}
+
 static void send_json_response(int client_fd, const char *json) {
     send_http_response(client_fd, 200, "OK", "application/json", json);
 }
@@ -610,8 +628,7 @@ static void handle_request(int client_fd, char *request, size_t request_len, siz
     // Autenticação Basic (se configurada)
     if (g_auth_user[0] != '\0' && g_auth_password[0] != '\0') {
         if (!auth_header_found || !check_basic_auth(auth_header)) {
-            send_http_response(client_fd, 401, "Unauthorized", "text/plain",
-                               "Unauthorized\n");
+            send_unauthorized(client_fd);
             return;
         }
     }
