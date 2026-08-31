@@ -12,7 +12,11 @@ case "$m" in
     x86_64|amd64)        arch=x86_64 ;;
     i686|i586|i386)      arch=x86_32 ;;
     aarch64|arm64)       arch=aarch64 ;;
-    armv7l|armv6l)       arch=armv7 ;;
+    armv7l|armv8l)       arch=armv7 ;;
+    armv6l|armhf)
+        # Requer CPU com conjunto ARMv7 (a maioria das boxes "armv6l"
+        # tem nucleos ARMv7). Se falhar, compilar a partir do codigo.
+        arch=armv7 ;;
     mips)                arch=mipsel ;;
     mips64)              arch=mips64el ;;
     *)                   arch="" ;;
@@ -27,7 +31,7 @@ fi
 
 # Configuracoes de exemplo (nao sobrescrevem as existentes)
 mkdir -p "$CONFDIR"
-for f in cccam3.conf cccam3.users cccam3.readers; do
+for f in cccam3.conf cccam3.users cccam3.readers SoftCam.Key; do
     if [ ! -f "$CONFDIR/$f" ] && [ -f "$DEFDIR/$f" ]; then
         cp "$DEFDIR/$f" "$CONFDIR/$f"
     fi

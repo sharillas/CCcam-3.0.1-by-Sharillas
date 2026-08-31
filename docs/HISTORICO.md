@@ -397,3 +397,43 @@ e substituição de todas as funcionalidades simuladas por implementações reai
 - STAPI depende da libstapi.so do STLinux e hardware ST.
 - Cryptoworks/Nagra/Irdeto/PowerVU na EMU: ainda não implementados
   (Viaccess + BISS disponíveis).
+
+---
+
+## 18. Pacote IPK para Boxes Enigma2 + Correções (2026)
+
+### 18.1 Pacote IPK (`packages/ipk/`)
+
+Distribuição para boxes enigma2 (OpenPLi/OpenATV/OpenViX) via opkg:
+
+| Ficheiro | Função |
+|---|---|
+| `CONTROL/control` | Metadados opkg (`enigma2-plugin-softcams-cccam3`, arch `all`) |
+| `CONTROL/postinst` | Deteta a arquitetura (`uname -m`), copia o binário estático certo para `/usr/bin/cccam3`, cria as configs em `/etc/cccam3/` (sem sobrescrever), ajusta o log para `/var/volatile/log` (tmpfs) e inicia o serviço |
+| `CONTROL/prerm` | Para o serviço antes de remover/atualizar |
+| `etc/init.d/cccam3` | SysVinit: `start\|stop\|restart\|status` com pidfile |
+| `plugin.py` | Entrada **Menu > Plugins > CCcam3** (Iniciar/Parar/Estado) |
+
+- O job `ipk` no workflow de release monta o `.ipk` (formato `ar` +
+  `control.tar.gz` + `data.tar.gz`) com os 6 binários + configs de exemplo
+  (incluindo `SoftCam.Key`) e anexa-o à release.
+- A versão do pacote é derivada da tag da release (`vX.Y.Z` → `X.Y.Z`).
+
+### 18.2 Instalação em boxes sem wget/curl
+
+- `install.sh`: função `download()` com fallback **curl → wget → python**
+  (urlretrieve, Python 2 e 3).
+- `install.sh` deteta box enigma2 (`command -v opkg`) e instala via `.ipk`.
+- Métodos alternativos documentados: `opkg install <URL>` direto ou
+  download por Python.
+
+### 18.3 Correções após revisão
+
+- `postinst`: adicionado o mapeamento `armv8l` → armv7 (boxes ARM64 em
+  userland 32-bit); `armv6l`/`armhf` mantêm armv7 com aviso de que
+  requerem CPU ARMv7.
+- `SoftCam.Key` incluído no IPK (`usr/share/cccam3/`) e copiado para
+  `/etc/cccam3/` no postinst; `install.sh` também descarrega o
+  `SoftCam.Key` de exemplo.
+- Versão do `control` e do nome do `.ipk` agora derivados da tag da
+  release (fim do 3.0.1 hardcoded no workflow).

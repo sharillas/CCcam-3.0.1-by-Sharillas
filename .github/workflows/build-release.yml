@@ -123,12 +123,14 @@ jobs:
 
       - name: Assemble ipk
         run: |
+          IPK_VERSION="${RELEASE_TAG#v}"
           mkdir -p ipkdata/etc/init.d \
                    ipkdata/usr/bin \
                    ipkdata/usr/share/cccam3 \
                    ipkdata/usr/lib/enigma2/python/Plugins/Extensions/CCcam3 \
                    ipkctrl
           cp packages/ipk/CONTROL/control ipkctrl/control
+          sed -i "s/^Version: .*/Version: $IPK_VERSION/" ipkctrl/control
           cp packages/ipk/CONTROL/postinst ipkctrl/postinst
           cp packages/ipk/CONTROL/prerm ipkctrl/prerm
           chmod 0755 ipkctrl/postinst ipkctrl/prerm
@@ -139,16 +141,19 @@ jobs:
           cp examples/cccam3.conf ipkdata/usr/share/cccam3/cccam3.conf
           cp examples/cccam3.users ipkdata/usr/share/cccam3/cccam3.users
           cp examples/cccam3.readers ipkdata/usr/share/cccam3/cccam3.readers
+          cp conf/SoftCam.Key ipkdata/usr/share/cccam3/SoftCam.Key
           cp bins/bin-*/cccam3-* ipkdata/usr/bin/
           ls -la ipkdata/usr/bin/
           cd ipkctrl && tar czf ../control.tar.gz . && cd ..
           cd ipkdata && tar czf ../data.tar.gz . && cd ..
           echo "2.0" > debian-binary
-          ar r enigma2-plugin-softcams-cccam3_3.0.1_all.ipk debian-binary control.tar.gz data.tar.gz
-          ls -la enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+          IPK="enigma2-plugin-softcams-cccam3_${IPK_VERSION}_all.ipk"
+          ar r "$IPK" debian-binary control.tar.gz data.tar.gz
+          echo "IPK_FILE=$IPK" >> "$GITHUB_ENV"
+          ls -la "$IPK"
 
       - name: Upload ipk to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "$RELEASE_TAG" enigma2-plugin-softcams-cccam3_3.0.1_all.ipk --clobber
+          gh release upload "$RELEASE_TAG" "$IPK_FILE" --clobber

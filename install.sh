@@ -77,7 +77,8 @@ detect_arch() {
         x86_64|amd64)            echo "x86_64" ;;
         i686|i586|i386)          echo "x86_32" ;;
         aarch64|arm64)           echo "aarch64" ;;
-        armv7l|armv6l|armhf)     echo "armv7" ;;
+        armv7l|armv8l)           echo "armv7" ;;
+        armv6l|armhf)            echo "armv7" ;;
         mips)
             # endianness: 0111 (octal) = little-endian
             if [ "$(printf I | od -to2 | head -n1 | awk '{print $2}')" = "0111" ]; then
@@ -167,7 +168,7 @@ echo ">> Binário instalado em $BIN_DIR/cccam3"
 
 # --- Configurações (não sobrescrever as existentes) ---
 mkdir -p "$CONF_DIR"
-for f in cccam3.conf cccam3.users cccam3.readers; do
+for f in cccam3.conf cccam3.users cccam3.readers SoftCam.Key; do
     if [ ! -f "$CONF_DIR/$f" ]; then
         download "$RAW/examples/$f" "$CONF_DIR/$f" || \
             download "$RAW/conf/$f" "$CONF_DIR/$f" || true

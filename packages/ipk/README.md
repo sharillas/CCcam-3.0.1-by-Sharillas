@@ -29,16 +29,17 @@ opkg install --force-overwrite /tmp/cccam3.ipk
 | `CONTROL/control` | Metadados opkg (nome, versão, arch `all`) |
 | `CONTROL/postinst` | Pós-instalação: escolhe o binário certo para a arquitetura, cria as configs em `/etc/cccam3/` (se não existirem), ajusta o log para `/var/volatile/log` (tmpfs, preserva a flash) e inicia o serviço |
 | `CONTROL/prerm` | Para o serviço antes de remover/atualizar |
-| `etc/init.d/cccam3` | Script de arranque SysVinit: `start|stop|restart|status` |
+| `etc/init.d/cccam3` | Script de arranque SysVinit: `start\|stop\|restart\|status` |
 | `usr/lib/enigma2/python/Plugins/Extensions/CCcam3/plugin.py` | Entrada no menu da box: **Menu > Plugins > CCcam3** (iniciar/parar/estado) |
-| `usr/share/cccam3/*` | Configurações de exemplo (copiadas para `/etc/cccam3/` no postinst, sem sobrescrever) |
+| `usr/share/cccam3/*` | Configurações de exemplo (copiadas para `/etc/cccam3/` no postinst, sem sobrescrever) — inclui o `SoftCam.Key` |
 | `usr/bin/cccam3-<arch>` | Os 6 binários estáticos (o postinst copia o certo para `/usr/bin/cccam3`) |
 
 ## Geração
 
 A GitHub Action `.github/workflows/build-release.yml` monta o `.ipk`
 (formato `ar` + `control.tar.gz` + `data.tar.gz`) depois de compilar os
-6 binários estáticos e anexa-o à release.
+6 binários estáticos e anexa-o à release. A versão do pacote é derivada
+da tag da release (`vX.Y.Z` → `X.Y.Z`), tal como o nome do ficheiro.
 
 Para gerar manualmente num Linux:
 
@@ -50,6 +51,9 @@ Para gerar manualmente num Linux:
 
 - Binários **totalmente estáticos** (libc incluída) — correm em qualquer
   imagem OE (glibc antigo, uClibc ou musl)
+- Arquiteturas detetadas no postinst: `x86_64`, `x86_32`, `aarch64`,
+  `armv7l`/`armv8l` (→ armv7), `armv6l`/`armhf` (→ armv7, requer CPU
+  ARMv7), `mips` (→ mipsel), `mips64` (→ mips64el)
 - Nos readers remotos usar sempre **IP** (binários estáticos não fazem
   resolução de hostnames em algumas boxes)
 - Painel web: http://IP-da-box:8080/web
