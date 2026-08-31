@@ -1,0 +1,472 @@
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/core/cccam3_server.c -o obj/core/cccam3_server.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/core/cccam3_config.c -o obj/core/cccam3_config.o
+src/core/cccam3_server.c: In function ‘handle_client_message’:
+src/core/cccam3_server.c:427:5: warning: ‘__builtin_strncpy’ output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  427 |     strncpy(client->username, login.username, sizeof(client->username) - 1);
+      |     ^
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/core/cccam3_client.c -o obj/core/cccam3_client.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/core/cccam3_logger.c -o obj/core/cccam3_logger.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/core/cccam3_utils.c -o obj/core/cccam3_utils.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/core/cccam3_optimizer.c -o obj/core/cccam3_optimizer.o
+src/core/cccam3_utils.c: In function ‘cccam_sha1’:
+src/core/cccam3_utils.c:37:5: warning: ‘SHA1_Init’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   37 |     SHA1_Init(&ctx);
+      |     ^~~~~~~~~
+In file included from src/core/cccam3_utils.c:6:
+/usr/include/openssl/sha.h:49:27: note: declared here
+   49 | OSSL_DEPRECATEDIN_3_0 int SHA1_Init(SHA_CTX *c);
+      |                           ^~~~~~~~~
+src/core/cccam3_utils.c:38:5: warning: ‘SHA1_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   38 |     SHA1_Update(&ctx, data, len);
+      |     ^~~~~~~~~~~
+/usr/include/openssl/sha.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int SHA1_Update(SHA_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~~
+src/core/cccam3_utils.c:39:5: warning: ‘SHA1_Final’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   39 |     SHA1_Final(hash, &ctx);
+      |     ^~~~~~~~~~
+/usr/include/openssl/sha.h:51:27: note: declared here
+   51 | OSSL_DEPRECATEDIN_3_0 int SHA1_Final(unsigned char *md, SHA_CTX *c);
+      |                           ^~~~~~~~~~
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/network/cccam3_protocol.c -o obj/network/cccam3_protocol.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/network/cccam3_handshake.c -o obj/network/cccam3_handshake.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/network/cccam3_handshake_advanced.c -o obj/network/cccam3_handshake_advanced.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/network/cccam3_crypto.c -o obj/network/cccam3_crypto.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/network/cccam3_crypto_advanced.c -o obj/network/cccam3_crypto_advanced.o
+src/network/cccam3_crypto.c: In function ‘cccam_crypto_rc4’:
+src/network/cccam3_crypto.c:11:5: warning: ‘RC4_set_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   11 |     RC4_set_key(&rc4_key, (int)key_len, key);
+      |     ^~~~~~~~~~~
+In file included from src/network/cccam3_crypto.c:4:
+/usr/include/openssl/rc4.h:35:28: note: declared here
+   35 | OSSL_DEPRECATEDIN_3_0 void RC4_set_key(RC4_KEY *key, int len,
+      |                            ^~~~~~~~~~~
+src/network/cccam3_crypto.c:12:5: warning: ‘RC4’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   12 |     RC4(&rc4_key, len, data, data);
+      |     ^~~
+/usr/include/openssl/rc4.h:37:28: note: declared here
+   37 | OSSL_DEPRECATEDIN_3_0 void RC4(RC4_KEY *key, size_t len,
+      |                            ^~~
+src/network/cccam3_crypto.c: In function ‘cccam_crypto_aes’:
+src/network/cccam3_crypto.c:24:9: warning: ‘AES_set_encrypt_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   24 |         if (encrypt) AES_set_encrypt_key(key, 128, &aes_key);
+      |         ^~
+In file included from src/network/cccam3_crypto.c:3:
+/usr/include/openssl/aes.h:51:5: note: declared here
+   51 | int AES_set_encrypt_key(const unsigned char *userKey, const int bits,
+      |     ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto.c:25:9: warning: ‘AES_set_decrypt_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   25 |         else AES_set_decrypt_key(key, 128, &aes_key);
+      |         ^~~~
+/usr/include/openssl/aes.h:54:5: note: declared here
+   54 | int AES_set_decrypt_key(const unsigned char *userKey, const int bits,
+      |     ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto.c:27:9: warning: ‘AES_set_encrypt_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   27 |         if (encrypt) AES_set_encrypt_key(key, 192, &aes_key);
+      |         ^~
+/usr/include/openssl/aes.h:51:5: note: declared here
+   51 | int AES_set_encrypt_key(const unsigned char *userKey, const int bits,
+      |     ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto.c:28:9: warning: ‘AES_set_decrypt_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   28 |         else AES_set_decrypt_key(key, 192, &aes_key);
+      |         ^~~~
+/usr/include/openssl/aes.h:54:5: note: declared here
+   54 | int AES_set_decrypt_key(const unsigned char *userKey, const int bits,
+      |     ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto.c:30:9: warning: ‘AES_set_encrypt_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   30 |         if (encrypt) AES_set_encrypt_key(key, 256, &aes_key);
+      |         ^~
+/usr/include/openssl/aes.h:51:5: note: declared here
+   51 | int AES_set_encrypt_key(const unsigned char *userKey, const int bits,
+      |     ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto.c:31:9: warning: ‘AES_set_decrypt_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   31 |         else AES_set_decrypt_key(key, 256, &aes_key);
+      |         ^~~~
+/usr/include/openssl/aes.h:54:5: note: declared here
+   54 | int AES_set_decrypt_key(const unsigned char *userKey, const int bits,
+      |     ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto.c:38:13: warning: ‘AES_encrypt’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   38 |             AES_encrypt(data + i, data + i, &aes_key);
+      |             ^~~~~~~~~~~
+/usr/include/openssl/aes.h:57:6: note: declared here
+   57 | void AES_encrypt(const unsigned char *in, unsigned char *out,
+      |      ^~~~~~~~~~~
+src/network/cccam3_crypto.c:40:13: warning: ‘AES_decrypt’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   40 |             AES_decrypt(data + i, data + i, &aes_key);
+      |             ^~~~~~~~~~~
+/usr/include/openssl/aes.h:60:6: note: declared here
+   60 | void AES_decrypt(const unsigned char *in, unsigned char *out,
+      |      ^~~~~~~~~~~
+src/network/cccam3_crypto.c: In function ‘cccam_crypto_3des’:
+src/network/cccam3_crypto.c:60:5: warning: ‘DES_set_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   60 |     DES_set_key(&k1, &ks1);
+      |     ^~~~~~~~~~~
+In file included from src/network/cccam3_crypto.c:5:
+/usr/include/openssl/des.h:186:5: note: declared here
+  186 | int DES_set_key(const_DES_cblock *key, DES_key_schedule *schedule);
+      |     ^~~~~~~~~~~
+src/network/cccam3_crypto.c:61:5: warning: ‘DES_set_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   61 |     DES_set_key(&k2, &ks2);
+      |     ^~~~~~~~~~~
+/usr/include/openssl/des.h:186:5: note: declared here
+  186 | int DES_set_key(const_DES_cblock *key, DES_key_schedule *schedule);
+      |     ^~~~~~~~~~~
+src/network/cccam3_crypto.c:62:5: warning: ‘DES_set_key’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   62 |     DES_set_key(&k3, &ks3);
+      |     ^~~~~~~~~~~
+/usr/include/openssl/des.h:186:5: note: declared here
+  186 | int DES_set_key(const_DES_cblock *key, DES_key_schedule *schedule);
+      |     ^~~~~~~~~~~
+src/network/cccam3_crypto.c:66:13: warning: ‘DES_ecb3_encrypt’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   66 |             DES_ecb3_encrypt((DES_cblock *)(data + i), (DES_cblock *)(data + i),
+      |             ^~~~~~~~~~~~~~~~
+/usr/include/openssl/des.h:78:6: note: declared here
+   78 | void DES_ecb3_encrypt(const_DES_cblock *input, DES_cblock *output,
+      |      ^~~~~~~~~~~~~~~~
+src/network/cccam3_crypto.c:69:13: warning: ‘DES_ecb3_encrypt’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   69 |             DES_ecb3_encrypt((DES_cblock *)(data + i), (DES_cblock *)(data + i),
+      |             ^~~~~~~~~~~~~~~~
+/usr/include/openssl/des.h:78:6: note: declared here
+   78 | void DES_ecb3_encrypt(const_DES_cblock *input, DES_cblock *output,
+      |      ^~~~~~~~~~~~~~~~
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/network/cccam3_newcamd.c -o obj/network/cccam3_newcamd.o
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_aes_gcm_encrypt’:
+src/network/cccam3_crypto_advanced.c:15:61: warning: unused parameter ‘iv_len’ [-Wunused-parameter]
+   15 |                                   const uint8_t *iv, size_t iv_len,
+      |                                                      ~~~~~~~^~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_aes_gcm_decrypt’:
+src/network/cccam3_crypto_advanced.c:70:61: warning: unused parameter ‘iv_len’ [-Wunused-parameter]
+   70 |                                   const uint8_t *iv, size_t iv_len,
+      |                                                      ~~~~~~~^~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_aes_gcm_encrypt_aad’:
+src/network/cccam3_crypto_advanced.c:132:65: warning: unused parameter ‘iv_len’ [-Wunused-parameter]
+  132 |                                       const uint8_t *iv, size_t iv_len,
+      |                                                          ~~~~~~~^~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_aes_gcm_decrypt_aad’:
+src/network/cccam3_crypto_advanced.c:190:65: warning: unused parameter ‘iv_len’ [-Wunused-parameter]
+  190 |                                       const uint8_t *iv, size_t iv_len,
+      |                                                          ~~~~~~~^~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_rsa_generate_keypair’:
+src/network/cccam3_crypto_advanced.c:252:5: warning: ‘RSA_generate_key’ is deprecated: Since OpenSSL 0.9.8 [-Wdeprecated-declarations]
+  252 |     *rsa = RSA_generate_key(bits, RSA_F4, NULL, NULL);
+      |     ^
+In file included from src/network/cccam3_crypto_advanced.h:4,
+                 from src/network/cccam3_crypto_advanced.c:1:
+/usr/include/openssl/rsa.h:258:30: note: declared here
+  258 | OSSL_DEPRECATEDIN_0_9_8 RSA *RSA_generate_key(int bits, unsigned long e, void
+      |                              ^~~~~~~~~~~~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_rsa_export_public_key’:
+src/network/cccam3_crypto_advanced.c:269:5: warning: ‘PEM_write_bio_RSA_PUBKEY’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  269 |     if (PEM_write_bio_RSA_PUBKEY(bio, rsa) != 1) {
+      |     ^~
+In file included from src/network/cccam3_crypto_advanced.c:6:
+/usr/include/openssl/pem.h:449:1: note: declared here
+  449 | DECLARE_PEM_rw_attr(OSSL_DEPRECATEDIN_3_0, RSA_PUBKEY, RSA)
+      | ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_rsa_import_public_key’:
+src/network/cccam3_crypto_advanced.c:295:5: warning: ‘PEM_read_bio_RSA_PUBKEY’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  295 |     RSA *rsa = PEM_read_bio_RSA_PUBKEY(bio, NULL, NULL, NULL);
+      |     ^~~
+/usr/include/openssl/pem.h:449:1: note: declared here
+  449 | DECLARE_PEM_rw_attr(OSSL_DEPRECATEDIN_3_0, RSA_PUBKEY, RSA)
+      | ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_rsa_encrypt’:
+src/network/cccam3_crypto_advanced.c:306:5: warning: ‘RSA_size’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  306 |     int rsa_size = RSA_size(rsa);
+      |     ^~~
+/usr/include/openssl/rsa.h:209:27: note: declared here
+  209 | OSSL_DEPRECATEDIN_3_0 int RSA_size(const RSA *rsa);
+      |                           ^~~~~~~~
+src/network/cccam3_crypto_advanced.c:312:5: warning: ‘RSA_public_encrypt’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  312 |     int result = RSA_public_encrypt(data_len, data, ciphertext, rsa, RSA_PKCS1_OAEP_PADDING);
+      |     ^~~
+/usr/include/openssl/rsa.h:287:5: note: declared here
+  287 | int RSA_public_encrypt(int flen, const unsigned char *from, unsigned char *to,
+      |     ^~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_rsa_decrypt’:
+src/network/cccam3_crypto_advanced.c:327:5: warning: ‘RSA_size’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  327 |     int rsa_size = RSA_size(rsa);
+      |     ^~~
+/usr/include/openssl/rsa.h:209:27: note: declared here
+  209 | OSSL_DEPRECATEDIN_3_0 int RSA_size(const RSA *rsa);
+      |                           ^~~~~~~~
+src/network/cccam3_crypto_advanced.c:332:5: warning: ‘RSA_private_decrypt’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  332 |     int result = RSA_private_decrypt(ciphertext_len, ciphertext, plaintext, rsa, RSA_PKCS1_OAEP_PADDING);
+      |     ^~~
+/usr/include/openssl/rsa.h:296:5: note: declared here
+  296 | int RSA_private_decrypt(int flen, const unsigned char *from, unsigned char *to,
+      |     ^~~~~~~~~~~~~~~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_rsa_sign’:
+src/network/cccam3_crypto_advanced.c:350:5: warning: ‘RSA_size’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  350 |     unsigned int sig_len = RSA_size(rsa);
+      |     ^~~~~~~~
+/usr/include/openssl/rsa.h:209:27: note: declared here
+  209 | OSSL_DEPRECATEDIN_3_0 int RSA_size(const RSA *rsa);
+      |                           ^~~~~~~~
+src/network/cccam3_crypto_advanced.c:351:5: warning: ‘RSA_sign’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  351 |     int result = RSA_sign(NID_sha256, hash, SHA256_DIGEST_LENGTH, signature, &sig_len, rsa);
+      |     ^~~
+/usr/include/openssl/rsa.h:353:27: note: declared here
+  353 | OSSL_DEPRECATEDIN_3_0 int RSA_sign(int type, const unsigned char *m,
+      |                           ^~~~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_rsa_verify’:
+src/network/cccam3_crypto_advanced.c:369:5: warning: ‘RSA_verify’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  369 |     int result = RSA_verify(NID_sha256, hash, SHA256_DIGEST_LENGTH, signature, signature_len, rsa);
+      |     ^~~
+/usr/include/openssl/rsa.h:356:27: note: declared here
+  356 | OSSL_DEPRECATEDIN_3_0 int RSA_verify(int type, const unsigned char *m,
+      |                           ^~~~~~~~~~
+src/network/cccam3_crypto_advanced.c: In function ‘cccam_crypto_rsa_free’:
+src/network/cccam3_crypto_advanced.c:380:5: warning: ‘RSA_free’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  380 |     if (rsa) RSA_free(rsa);
+      |     ^~
+/usr/include/openssl/rsa.h:298:28: note: declared here
+  298 | OSSL_DEPRECATEDIN_3_0 void RSA_free(RSA *r);
+      |                            ^~~~~~~~
+src/network/cccam3_newcamd.c: In function ‘md5_crypt’:
+src/network/cccam3_newcamd.c:71:5: warning: ‘MD5_Init’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   71 |     MD5_Init(&ctx);
+      |     ^~~~~~~~
+In file included from src/network/cccam3_newcamd.c:26:
+/usr/include/openssl/md5.h:49:27: note: declared here
+   49 | OSSL_DEPRECATEDIN_3_0 int MD5_Init(MD5_CTX *c);
+      |                           ^~~~~~~~
+src/network/cccam3_newcamd.c:72:5: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   72 |     MD5_Update(&ctx, pw, pw_len);
+      |     ^~~~~~~~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:73:5: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   73 |     MD5_Update(&ctx, magic, 3);
+      |     ^~~~~~~~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:74:5: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   74 |     MD5_Update(&ctx, salt_buf, strlen(salt_buf));
+      |     ^~~~~~~~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:76:5: warning: ‘MD5_Init’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   76 |     MD5_Init(&ctx1);
+      |     ^~~~~~~~
+/usr/include/openssl/md5.h:49:27: note: declared here
+   49 | OSSL_DEPRECATEDIN_3_0 int MD5_Init(MD5_CTX *c);
+      |                           ^~~~~~~~
+src/network/cccam3_newcamd.c:77:5: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   77 |     MD5_Update(&ctx1, pw, pw_len);
+      |     ^~~~~~~~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:78:5: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   78 |     MD5_Update(&ctx1, salt_buf, strlen(salt_buf));
+      |     ^~~~~~~~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:79:5: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   79 |     MD5_Update(&ctx1, pw, pw_len);
+      |     ^~~~~~~~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:80:5: warning: ‘MD5_Final’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   80 |     MD5_Final(digest, &ctx1);
+      |     ^~~~~~~~~
+/usr/include/openssl/md5.h:51:27: note: declared here
+   51 | OSSL_DEPRECATEDIN_3_0 int MD5_Final(unsigned char *md, MD5_CTX *c);
+      |                           ^~~~~~~~~
+src/network/cccam3_newcamd.c:83:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   83 |         MD5_Update(&ctx, digest, i > 16 ? 16 : i);
+      |         ^~~~~~~~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:86:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   86 |         if (i & 1) MD5_Update(&ctx, "\0", 1);
+      |         ^~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:87:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   87 |         else MD5_Update(&ctx, pw, 1);
+      |         ^~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:89:5: warning: ‘MD5_Final’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   89 |     MD5_Final(digest, &ctx);
+      |     ^~~~~~~~~
+/usr/include/openssl/md5.h:51:27: note: declared here
+   51 | OSSL_DEPRECATEDIN_3_0 int MD5_Final(unsigned char *md, MD5_CTX *c);
+      |                           ^~~~~~~~~
+src/network/cccam3_newcamd.c:92:9: warning: ‘MD5_Init’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   92 |         MD5_Init(&ctx1);
+      |         ^~~~~~~~
+/usr/include/openssl/md5.h:49:27: note: declared here
+   49 | OSSL_DEPRECATEDIN_3_0 int MD5_Init(MD5_CTX *c);
+      |                           ^~~~~~~~
+src/network/cccam3_newcamd.c:93:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   93 |         if (i & 1) MD5_Update(&ctx1, pw, pw_len);
+      |         ^~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:94:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   94 |         else MD5_Update(&ctx1, digest, 16);
+      |         ^~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:95:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   95 |         if (i % 3) MD5_Update(&ctx1, salt_buf, strlen(salt_buf));
+      |         ^~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:96:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   96 |         if (i % 7) MD5_Update(&ctx1, pw, pw_len);
+      |         ^~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:97:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   97 |         if (i & 1) MD5_Update(&ctx1, digest, 16);
+      |         ^~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:98:9: warning: ‘MD5_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   98 |         else MD5_Update(&ctx1, pw, pw_len);
+      |         ^~~~
+/usr/include/openssl/md5.h:50:27: note: declared here
+   50 | OSSL_DEPRECATEDIN_3_0 int MD5_Update(MD5_CTX *c, const void *data, size_t len);
+      |                           ^~~~~~~~~~
+src/network/cccam3_newcamd.c:99:9: warning: ‘MD5_Final’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+   99 |         MD5_Final(digest, &ctx1);
+      |         ^~~~~~~~~
+/usr/include/openssl/md5.h:51:27: note: declared here
+   51 | OSSL_DEPRECATEDIN_3_0 int MD5_Final(unsigned char *md, MD5_CTX *c);
+      |                           ^~~~~~~~~
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/hardware/cccam3_dvbapi.c -o obj/hardware/cccam3_dvbapi.o
+src/network/cccam3_newcamd.c: In function ‘md5_crypt.constprop’:
+src/network/cccam3_newcamd.c:69:5: warning: ‘__builtin_strncpy’ output truncated before terminating nul copying 8 bytes from a string of the same length [-Wstringop-truncation]
+   69 |     strncpy(salt_buf, salt, 8);
+      |     ^
+src/hardware/cccam3_dvbapi.c: In function ‘dvbapi_ca_provid’:
+src/hardware/cccam3_dvbapi.c:221:61: warning: bitwise comparison always evaluates to false [-Wtautological-compare]
+  221 |     } else if ((caid & 0xFF00) == 0x1800 || (caid & 0xF000) == 0x1800) {
+      |                                                             ^~
+src/hardware/cccam3_dvbapi.c: In function ‘dvbapi_client_thread’:
+src/hardware/cccam3_dvbapi.c:407:37: warning: comparison of integer expressions of different signedness: ‘int’ and ‘uint32_t’ {aka ‘unsigned int’} [-Wsign-compare]
+  407 |                     if (cat_len + 3 <= sec_len) {
+      |                                     ^~
+src/hardware/cccam3_dvbapi.c: In function ‘dvbapi_thread_func’:
+src/hardware/cccam3_dvbapi.c:511:5: warning: ‘__builtin_strncpy’ output may be truncated copying 107 bytes from a string of length 107 [-Wstringop-truncation]
+  511 |     strncpy(addr.sun_path, g_socket_path, sizeof(addr.sun_path) - 1);
+      |     ^
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/hardware/cccam3_stapi.c -o obj/hardware/cccam3_stapi.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/hardware/cccam3_dvb.c -o obj/hardware/cccam3_dvb.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/hardware/cccam3_smartcard.c -o obj/hardware/cccam3_smartcard.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/CCshare/cccam3_cache.c -o obj/CCshare/cccam3_cache.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/CCshare/cccam3_ecm.c -o obj/CCshare/cccam3_ecm.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/CCshare/cccam3_card_manager.c -o obj/CCshare/cccam3_card_manager.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/CCshare/cccam3_hop_control.c -o obj/CCshare/cccam3_hop_control.o
+src/CCshare/cccam3_hop_control.c: In function ‘cccam_hop_control_check’:
+src/CCshare/cccam3_hop_control.c:55:53: warning: unused parameter ‘provid’ [-Wunused-parameter]
+   55 | int cccam_hop_control_check(uint16_t caid, uint16_t provid, uint16_t sid,
+      |                                            ~~~~~~~~~^~~~~~
+src/CCshare/cccam3_hop_control.c:56:51: warning: unused parameter ‘client_id’ [-Wunused-parameter]
+   56 |                             uint8_t hop, uint32_t client_id) {
+      |                                          ~~~~~~~~~^~~~~~~~~
+src/CCshare/cccam3_hop_control.c: In function ‘cccam_hop_control_register’:
+src/CCshare/cccam3_hop_control.c:86:5: warning: implicit declaration of function ‘cccam_hop_control_clean_expired_locked’; did you mean ‘cccam_hop_control_clean_expired’? [-Wimplicit-function-declaration]
+   86 |     cccam_hop_control_clean_expired_locked();
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |     cccam_hop_control_clean_expired
+src/CCshare/cccam3_hop_control.c: At top level:
+src/CCshare/cccam3_hop_control.c:165:12: error: static declaration of ‘cccam_hop_control_clean_expired_locked’ follows non-static declaration
+  165 | static int cccam_hop_control_clean_expired_locked(void) {
+      |            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/CCshare/cccam3_hop_control.c:86:5: note: previous implicit declaration of ‘cccam_hop_control_clean_expired_locked’ with type ‘int()’
+   86 |     cccam_hop_control_clean_expired_locked();
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+make: *** [Makefile:66: obj/CCshare/cccam3_hop_control.o] Error 1
+make: *** Waiting for unfinished jobs....
+src/CCshare/cccam3_card_manager.c: In function ‘remote_read_message’:
+src/CCshare/cccam3_card_manager.c:178:64: warning: passing argument 4 of ‘cccam_protocol_parse’ from incompatible pointer type [-Wincompatible-pointer-types]
+  178 |     return cccam_protocol_parse(buffer, (size_t)total, header, payload,
+      |                                                                ^~~~~~~
+      |                                                                |
+      |                                                                uint8_t ** {aka unsigned char **}
+In file included from src/CCshare/cccam3_card_manager.c:3:
+src/network/cccam3_protocol.h:33:61: note: expected ‘void **’ but argument is of type ‘uint8_t **’ {aka ‘unsigned char **’}
+   33 |                          cccam_msg_header_t *header, void **payload,
+      |                                                      ~~~~~~~^~~~~~~
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_cleanup’:
+src/CCshare/cccam3_card_manager.c:464:32: warning: initialization of ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  464 |         cccam_reader_t *next = current->next;
+      |                                ^~~~~~~
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_add_reader’:
+src/CCshare/cccam3_card_manager.c:490:18: warning: assignment to ‘struct cccam_reader_t *’ from incompatible pointer type ‘cccam_reader_t *’ [-Wincompatible-pointer-types]
+  490 |     reader->next = g_readers;
+      |                  ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_remove_reader’:
+src/CCshare/cccam3_card_manager.c:508:27: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  508 |                 g_readers = current->next;
+      |                           ^
+src/CCshare/cccam3_card_manager.c:520:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  520 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_find_reader’:
+src/CCshare/cccam3_card_manager.c:533:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  533 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_find_reader_by_name’:
+src/CCshare/cccam3_card_manager.c:545:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  545 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_select_reader’:
+src/CCshare/cccam3_card_manager.c:564:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  564 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c:551:91: warning: unused parameter ‘sid’ [-Wunused-parameter]
+  551 | cccam_reader_t *cccam_card_manager_select_reader(uint16_t caid, uint16_t provid, uint16_t sid) {
+      |                                                                                  ~~~~~~~~~^~~
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_send_emm’:
+src/CCshare/cccam3_card_manager.c:664:21: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  664 |             current = current->next;
+      |                     ^
+src/CCshare/cccam3_card_manager.c:670:21: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  670 |             current = current->next;
+      |                     ^
+src/CCshare/cccam3_card_manager.c:682:25: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  682 |                 current = current->next;
+      |                         ^
+src/CCshare/cccam3_card_manager.c:695:21: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  695 |             current = current->next;
+      |                     ^
+src/CCshare/cccam3_card_manager.c:704:21: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  704 |             current = current->next;
+      |                     ^
+src/CCshare/cccam3_card_manager.c:715:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  715 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_get_stats’:
+src/CCshare/cccam3_card_manager.c:746:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  746 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_debug_print’:
+src/CCshare/cccam3_card_manager.c:896:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  896 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘remote_ensure_login’:
+src/CCshare/cccam3_card_manager.c:269:5: warning: ‘__builtin_strncpy’ output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  269 |     strncpy(login.username, reader->remote_user, sizeof(login.username) - 1);
+      |     ^
+src/CCshare/cccam3_card_manager.c:270:5: warning: ‘__builtin_strncpy’ output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  270 |     strncpy(login.password, reader->remote_pass, sizeof(login.password) - 1);
+      |     ^

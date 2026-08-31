@@ -1,0 +1,99 @@
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/hardware/cccam3_smartcard.c -o obj/hardware/cccam3_smartcard.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/CCshare/cccam3_cache.c -o obj/CCshare/cccam3_cache.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/CCshare/cccam3_ecm.c -o obj/CCshare/cccam3_ecm.o
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/CCshare/cccam3_card_manager.c -o obj/CCshare/cccam3_card_manager.o
+src/CCshare/cccam3_card_manager.c: In function ‘remote_read_message’:
+src/CCshare/cccam3_card_manager.c:178:64: warning: passing argument 4 of ‘cccam_protocol_parse’ from incompatible pointer type [-Wincompatible-pointer-types]
+  178 |     return cccam_protocol_parse(buffer, (size_t)total, header, payload,
+      |                                                                ^~~~~~~
+      |                                                                |
+      |                                                                uint8_t ** {aka unsigned char **}
+In file included from src/CCshare/cccam3_card_manager.c:3:
+src/network/cccam3_protocol.h:33:61: note: expected ‘void **’ but argument is of type ‘uint8_t **’ {aka ‘unsigned char **’}
+   33 |                          cccam_msg_header_t *header, void **payload,
+      |                                                      ~~~~~~~^~~~~~~
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_cleanup’:
+src/CCshare/cccam3_card_manager.c:464:32: warning: initialization of ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  464 |         cccam_reader_t *next = current->next;
+      |                                ^~~~~~~
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_add_reader’:
+src/CCshare/cccam3_card_manager.c:490:18: warning: assignment to ‘struct cccam_reader_t *’ from incompatible pointer type ‘cccam_reader_t *’ [-Wincompatible-pointer-types]
+  490 |     reader->next = g_readers;
+      |                  ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_remove_reader’:
+src/CCshare/cccam3_card_manager.c:508:27: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  508 |                 g_readers = current->next;
+      |                           ^
+src/CCshare/cccam3_card_manager.c:520:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  520 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_find_reader’:
+src/CCshare/cccam3_card_manager.c:533:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  533 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_find_reader_by_name’:
+src/CCshare/cccam3_card_manager.c:545:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  545 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_select_reader’:
+src/CCshare/cccam3_card_manager.c:564:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  564 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c:551:91: warning: unused parameter ‘sid’ [-Wunused-parameter]
+  551 | cccam_reader_t *cccam_card_manager_select_reader(uint16_t caid, uint16_t provid, uint16_t sid) {
+      |                                                                                  ~~~~~~~~~^~~
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_send_emm’:
+src/CCshare/cccam3_card_manager.c:664:21: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  664 |             current = current->next;
+      |                     ^
+src/CCshare/cccam3_card_manager.c:670:21: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  670 |             current = current->next;
+      |                     ^
+src/CCshare/cccam3_card_manager.c:682:25: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  682 |                 current = current->next;
+      |                         ^
+src/CCshare/cccam3_card_manager.c:695:21: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  695 |             current = current->next;
+      |                     ^
+src/CCshare/cccam3_card_manager.c:704:21: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  704 |             current = current->next;
+      |                     ^
+src/CCshare/cccam3_card_manager.c:715:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  715 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_get_stats’:
+src/CCshare/cccam3_card_manager.c:746:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  746 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘cccam_card_manager_debug_print’:
+src/CCshare/cccam3_card_manager.c:896:17: warning: assignment to ‘cccam_reader_t *’ from incompatible pointer type ‘struct cccam_reader_t *’ [-Wincompatible-pointer-types]
+  896 |         current = current->next;
+      |                 ^
+src/CCshare/cccam3_card_manager.c: In function ‘remote_ensure_login’:
+src/CCshare/cccam3_card_manager.c:269:5: warning: ‘__builtin_strncpy’ output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  269 |     strncpy(login.username, reader->remote_user, sizeof(login.username) - 1);
+      |     ^
+src/CCshare/cccam3_card_manager.c:270:5: warning: ‘__builtin_strncpy’ output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  270 |     strncpy(login.password, reader->remote_pass, sizeof(login.password) - 1);
+      |     ^
+gcc -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL -c src/CCshare/cccam3_hop_control.c -o obj/CCshare/cccam3_hop_control.o
+src/CCshare/cccam3_hop_control.c: In function ‘cccam_hop_control_check’:
+src/CCshare/cccam3_hop_control.c:55:53: warning: unused parameter ‘provid’ [-Wunused-parameter]
+   55 | int cccam_hop_control_check(uint16_t caid, uint16_t provid, uint16_t sid,
+      |                                            ~~~~~~~~~^~~~~~
+src/CCshare/cccam3_hop_control.c:56:51: warning: unused parameter ‘client_id’ [-Wunused-parameter]
+   56 |                             uint8_t hop, uint32_t client_id) {
+      |                                          ~~~~~~~~~^~~~~~~~~
+src/CCshare/cccam3_hop_control.c: In function ‘cccam_hop_control_register’:
+src/CCshare/cccam3_hop_control.c:86:5: warning: implicit declaration of function ‘cccam_hop_control_clean_expired_locked’; did you mean ‘cccam_hop_control_clean_expired’? [-Wimplicit-function-declaration]
+   86 |     cccam_hop_control_clean_expired_locked();
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |     cccam_hop_control_clean_expired
+src/CCshare/cccam3_hop_control.c: At top level:
+src/CCshare/cccam3_hop_control.c:165:12: error: static declaration of ‘cccam_hop_control_clean_expired_locked’ follows non-static declaration
+  165 | static int cccam_hop_control_clean_expired_locked(void) {
+      |            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/CCshare/cccam3_hop_control.c:86:5: note: previous implicit declaration of ‘cccam_hop_control_clean_expired_locked’ with type ‘int()’
+   86 |     cccam_hop_control_clean_expired_locked();
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+make: *** [Makefile:66: obj/CCshare/cccam3_hop_control.o] Error 1
