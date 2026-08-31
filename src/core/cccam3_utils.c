@@ -47,3 +47,30 @@ uint32_t cccam_hash_string(const char *str) {
     }
     return hash;
 }
+
+// Identificador da build: converte __DATE__ ("Aug 31 2026") e __TIME__
+// ("14:32:05") para "v31.08.2026.14:32". Atualiza automaticamente em
+// cada compilação.
+const char *cccam3_build_id(void) {
+    static char id[32];
+    static const char *months[] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    };
+    char month[4] = {0};
+    int day = 0, year = 0, hour = 0, min = 0;
+
+    sscanf(__DATE__, "%3s %d %d", month, &day, &year);
+    sscanf(__TIME__, "%d:%d", &hour, &min);
+
+    int mon = 1;
+    for (int i = 0; i < 12; i++) {
+        if (strcmp(month, months[i]) == 0) {
+            mon = i + 1;
+            break;
+        }
+    }
+
+    snprintf(id, sizeof(id), "v%02d.%02d.%d.%02d:%02d", day, mon, year, hour, min);
+    return id;
+}

@@ -16,6 +16,7 @@
 #include "cccam3_newcamd.h"
 #include "cccam3_emu.h"
 #include "cccam3_emu_des.h"
+#include "cccam3_channels.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -294,6 +295,18 @@ int cccam3_init(cccam_config_t *config) {
         server_resolve_path(g_config.emu_key_file, resolved_path, sizeof(resolved_path));
         cccam_emu_set_key_file(resolved_path);
         cccam_log(LOG_INFO, "Ficheiro de chaves EMU: %s", resolved_path);
+    }
+
+    // Ficheiros de canais/provedores (para o painel web)
+    {
+        char prov_path[256];
+        char chan_path[256];
+        const char *pf = g_config.providers_file[0] != '\0' ? g_config.providers_file : "conf/CCcam.providers";
+        const char *cf = g_config.channelinfo_file[0] != '\0' ? g_config.channelinfo_file : "conf/CCcam.channelinfo";
+        server_resolve_path(pf, prov_path, sizeof(prov_path));
+        server_resolve_path(cf, chan_path, sizeof(chan_path));
+        cccam_channels_set_files(prov_path, chan_path);
+        cccam_channels_init();
     }
 
     // Registo automático de utilizadores
@@ -916,6 +929,9 @@ int cccam3_run(void) {
                 } else {
                     client->is_newcamd = 1;
                     client->ncd_session = calloc(1, sizeof(cccam_newcamd_session_t));
+                    if (client->ncd_session) {
+                        ((cccam_newcamd_session_t *)client->ncd_session)->client_id = client->client_id;
+                    }
                     if (!client->ncd_session ||
                         cccam_newcamd_session_start(client_fd,
                             (cccam_newcamd_session_t *)client->ncd_session) != 0) {
@@ -980,6 +996,7 @@ void cccam3_cleanup(void) {
     cccam_cache_cleanup();
     cccam_ecm_cleanup();
     cccam_protocol_cleanup();
+    cccam_channels_cleanup();
     cccam_log(LOG_INFO, "CCcam3 encerrado");
 }
 

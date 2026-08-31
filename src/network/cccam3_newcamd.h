@@ -28,6 +28,7 @@ typedef struct cccam_newcamd_session {
     int key_mode;               // 0 = password, 1 = MD5-crypt
     uint16_t msg_id;            // último msgid recebido
     char username[64];
+    uint32_t client_id;         // id do cliente (para o painel web)
     time_t last_keepalive;
 } cccam_newcamd_session_t;
 

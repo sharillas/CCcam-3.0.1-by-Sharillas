@@ -1,0 +1,456 @@
+# =====================================================================
+#  CCcam.channelinfo - Nomes dos canais (para o painel web mostrar o que
+#  cada cliente está a ver)
+#
+#  Formato:  caid:provid:sid:nome_do_canal    (hex:hex:hex:nome)
+#  - provid 0000 = serve para qualquer provedor desse CAID
+#  - caid 0000  = canal em claro (FTA), serve para todos os sistemas
+#
+#  Base curada para: Astra 19.2E, Hotbird 13E e Hispasat 30W
+#  (incluindo os TDT espanhóis Abertis no 30W).
+#  Os SIDs podem mudar com o tempo - atualizar a partir dos pacotes da
+#  comunidade quando necessário.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# ASTRA 19.2E - França (TNTSAT - Viaccess 0500)
+# ---------------------------------------------------------------------
+0500:030B00:2001:TF1
+0500:030B00:2002:France 2
+0500:030B00:2003:France 3
+0500:030B00:2004:Canal+
+0500:030B00:2005:France 5
+0500:030B00:2006:M6
+0500:030B00:2007:arte
+0500:030B00:2008:C8
+0500:030B00:2009:W9
+0500:030B00:200A:TMC
+0500:030B00:200B:TFX
+0500:030B00:200C:NRJ 12
+0500:030B00:200D:LCP
+0500:030B00:200E:France 4
+0500:030B00:200F:BFM TV
+0500:030B00:2010:CNews
+0500:030B00:2011:CStar
+0500:030B00:2012:Gulli
+0500:030B00:2013:France Ô
+0500:030B00:2014:TF1 Séries Films
+0500:030B00:2015:L'Équipe
+0500:030B00:2016:6ter
+0500:030B00:2017:RMC Story
+0500:030B00:2018:RMC Découverte
+0500:030B00:2019:Chérie 25
+
+# ---------------------------------------------------------------------
+# ASTRA 19.2E - Alemanha (FTA e encriptados)
+# ---------------------------------------------------------------------
+0000:0000:10301:Das Erste HD
+0000:0000:11110:ZDF HD
+0000:0000:10302:BR Fernsehen
+0000:0000:10303:WDR
+0000:0000:10304:NDR
+0000:0000:10305:SWR
+0000:0000:10306:MDR
+0000:0000:10307:hr-fernsehen
+0000:0000:10308:rbb
+0000:0000:11001:3sat
+0000:0000:11120:KiKA
+0000:0000:11130:arte
+0000:0000:11140:phoenix
+0000:0000:11150:ONE
+0000:0000:11010:ZDFneo
+0000:0000:11020:ZDFinfo
+0000:0000:10801:RTL
+0000:0000:10802:RTL II
+0000:0000:10803:Super RTL
+0000:0000:10804:VOX
+0000:0000:10805:n-tv
+0000:0000:10806:NITRO
+0000:0000:10807:RTL Crime
+0000:0000:10810:SAT.1
+0000:0000:10811:ProSieben
+0000:0000:10812:kabel eins
+0000:0000:10813:SIXX
+0000:0000:10814:ProSieben MAXX
+0000:0000:10815:kabel eins Doku
+0000:0000:10816:SAT.1 Gold
+0000:0000:10820:WELT
+0000:0000:10821:DMAX
+0000:0000:10822:Sport1
+0000:0000:10823:TELE 5
+0000:0000:10824:Eurosport 1 Deutschland
+0000:0000:10825:Comedy Central
+0000:0000:10826:NICK
+0000:0000:10830:tagesschau24
+
+# --- Sky Deutschland (NDS 098C) ---
+098C:0000:000A:Sky Cinema Premieren
+098C:0000:000B:Sky Cinema Premieren +24
+098C:0000:000E:Sky Cinema Action
+098C:0000:000F:Sky Cinema Family
+098C:0000:0010:Sky Cinema Best Of
+098C:0000:0011:Sky Cinema Fun
+098C:0000:0014:Sky Sport Bundesliga
+098C:0000:0015:Sky Sport Fussball
+098C:0000:0016:Sky Sport News
+098C:0000:0017:Sky Sport Mix
+098C:0000:0018:Sky Sport Tennis
+098C:0000:0019:Sky Sport Golf
+098C:0000:001A:Sky Sport 1
+098C:0000:001B:Sky Sport 2
+098C:0000:001C:Sky Sport Austria
+098C:0000:001E:Sky Atlantic
+098C:0000:001F:Sky One
+098C:0000:0020:Sky Krimi
+098C:0000:0021:Sky Comedy
+098C:0000:0022:Sky Documentaries
+098C:0000:0023:Sky Nature
+098C:0000:0024:Sky Showcase
+098C:0000:0025:Sky 1
+098C:0000:0026:Universal TV
+098C:0000:0027:Syfy
+098C:0000:0028:13th Street
+098C:0000:0029:TNT Serie
+098C:0000:002A:Warner TV Serie
+
+# --- HD+ (Nagra 1843/1860) ---
+1843:0000:EF10:RTL HD
+1843:0000:EF11:VOX HD
+1843:0000:EF12:RTL II HD
+1843:0000:EF13:n-tv HD
+1843:0000:EF14:NITRO HD
+1843:0000:EF15:Super RTL HD
+1843:0000:EF20:SAT.1 HD
+1843:0000:EF21:ProSieben HD
+1843:0000:EF22:kabel eins HD
+1843:0000:EF23:SIXX HD
+1843:0000:0000:RTL UHD
+
+# ---------------------------------------------------------------------
+# ASTRA 19.2E - Áustria (ORF - Cryptoworks/Irdeto)
+# ---------------------------------------------------------------------
+0D95:000004:32C9:ORF 1
+0D95:000004:32CA:ORF 2
+0D95:000004:32CB:ORF 2 Europe
+0D95:000004:32CC:ORF III
+0D95:000004:32CD:ORF Sport +
+0D95:000004:32CE:ORF 1 HD
+0D95:000004:32CF:ORF 2 HD
+0D95:000004:32D0:ORF III HD
+0D95:000004:32D1:ORF Sport + HD
+0650:0000:32C9:ORF 1 (Irdeto)
+0650:0000:32CA:ORF 2 (Irdeto)
+0650:0000:32CC:ORF III (Irdeto)
+0650:0000:32CD:ORF Sport + (Irdeto)
+
+# ---------------------------------------------------------------------
+# ASTRA 19.2E - Holanda/Bélgica (Canal Digitaal - Seca 0100)
+# ---------------------------------------------------------------------
+0100:00006A:30F0:NPO 1
+0100:00006A:30F1:NPO 2
+0100:00006A:30F2:NPO 3
+0100:00006A:30F3:RTL 4
+0100:00006A:30F4:RTL 5
+0100:00006A:30F5:RTL 7
+0100:00006A:30F6:RTL 8
+0100:00006A:30F7:SBS 6
+0100:00006A:30F8:Net5
+0100:00006A:30F9:Veronica
+0100:00006A:30FA:Disney Channel
+0100:00006A:30FB:Discovery
+0100:00006C:30FC:één
+0100:00006C:30FD:Canvas
+0100:00006C:30FE:Ketnet
+0100:00006C:30FF:VTM
+
+# ---------------------------------------------------------------------
+# HOTBIRD 13E - Itália (Sky Italia - NDS 0919/093B)
+# ---------------------------------------------------------------------
+0919:0000:0BB8:Sky Sport 1
+0919:0000:0BB9:Sky Sport 2
+0919:0000:0BBA:Sky Sport 3
+0919:0000:0BBB:Sky Calcio 1
+0919:0000:0BBC:Sky Calcio 2
+0919:0000:0BBD:Sky Calcio 3
+0919:0000:0BBE:Sky Cinema Uno
+0919:0000:0BBF:Sky Cinema Due
+0919:0000:0BC0:Sky Cinema Collection
+0919:0000:0BC1:Sky Cinema Family
+0919:0000:0BC2:Sky Cinema Action
+0919:0000:0BC3:Sky Cinema Suspense
+0919:0000:0BC4:Sky Cinema Romance
+0919:0000:0BC5:Sky Cinema Drama
+0919:0000:0BC6:Sky Cinema Comedy
+0919:0000:0BC7:Sky Uno
+0919:0000:0BC8:Sky Atlantic
+0919:0000:0BC9:Sky Arte
+0919:0000:0BCA:Sky Serie
+0919:0000:0BCB:Sky Crime
+0919:0000:0BCC:Sky Investigation
+0919:0000:0BCD:Sky Documentaries
+0919:0000:0BCE:Sky Nature
+0919:0000:0BCF:Sky Sport Arena
+0919:0000:0BD0:Sky Sport F1
+0919:0000:0BD1:Sky Sport MotoGP
+0919:0000:0BD2:Sky Sport Tennis
+0919:0000:0BD3:Sky Sport NBA
+0919:0000:0BD4:Sky Sport 24
+0919:0000:0BD5:TV8
+0919:0000:0BD6:Cielo
+
+# --- RAI (FTA + Tivùsat Nagra 183D/183E) ---
+0000:0000:0D49:Rai 1
+0000:0000:0D4A:Rai 2
+0000:0000:0D4B:Rai 3
+0000:0000:0D4C:Rai 4
+0000:0000:0D4D:Rai 5
+0000:0000:0D4E:Rai Movie
+0000:0000:0D4F:Rai Premium
+0000:0000:0D50:Rai Gulp
+0000:0000:0D51:Rai Yoyo
+0000:0000:0D52:Rai News 24
+0000:0000:0D53:Rai Storia
+0000:0000:0D54:Rai Sport
+0000:0000:0D55:Rai Scuola
+0000:0000:213F:Rai 1 HD
+0000:0000:2140:Rai 2 HD
+0000:0000:2141:Rai 3 HD
+
+# --- Mediaset (Itália) ---
+0000:0000:0FA0:Canale 5
+0000:0000:0FA1:Italia 1
+0000:0000:0FA2:Rete 4
+0000:0000:0FA3:20
+0000:0000:0FA4:La5
+0000:0000:0FA5:Mediaset Extra
+0000:0000:0FA6:TGcom24
+0000:0000:0FA7:Boing
+0000:0000:0FA8:Cartoonito
+
+# ---------------------------------------------------------------------
+# HOTBIRD 13E - Polónia (Cyfrowy Polsat - Nagra 1861/1863)
+# ---------------------------------------------------------------------
+1861:0000:3AB8:Polsat
+1861:0000:3AB9:Polsat 2
+1861:0000:3ABA:Polsat Sport
+1861:0000:3ABB:Polsat Sport Extra
+1861:0000:3ABC:Polsat Sport News
+1861:0000:3ABD:Polsat Sport Fight
+1861:0000:3ABE:Polsat Film
+1861:0000:3ABF:Polsat Café
+1861:0000:3AC0:Polsat Play
+1861:0000:3AC1:Polsat News
+1861:0000:3AC2:Polsat News 2
+1861:0000:3AC3:Polsat Romans
+1861:0000:3AC4:Polsat Seriale
+1861:0000:3AC5:TV4
+1861:0000:3AC6:TV6
+1861:0000:3AC7:Polsat Doku
+1861:0000:3AC8:Polsat JimJam
+1861:0000:3AC9:Polsat Comedy Central Extra
+
+# --- TVN / TVP (FTA e NC+ Seca 0100) ---
+0000:0000:3D54:TVP 1
+0000:0000:3D55:TVP 2
+0000:0000:3D56:TVP Info
+0000:0000:3D57:TVP Kultura
+0000:0000:3D58:TVP Historia
+0000:0000:3D59:TVP Sport
+0000:0000:3D5A:TVP ABC
+0000:0000:3D5B:TVP Rozrywka
+0000:0000:3D5C:TVN
+0000:0000:3D5D:TVN 7
+0000:0000:3D5E:TVN24
+0000:0000:3D5F:TVN Turbo
+0000:0000:3D60:TVN Style
+0000:0000:3D61:TVN Fabuła
+0100:0000C0:3D62:Canal+ Polska
+0100:0000C0:3D63:Canal+ Sport
+0100:0000C0:3D64:Canal+ Film
+0100:0000C0:3D65:Canal+ Seriale
+0100:0000C0:3D66:Canal+ 1
+0100:0000C0:3D67:Canal+ Sport 2
+0100:0000C0:3D68:Canal+ Sport 3
+0100:0000C0:3D69:Canal+ Sport 4
+0100:0000C0:3D6A:Canal+ Discovery
+0100:0000C0:3D6B:Eurosport 1 Polska
+0100:0000C0:3D6C:Eurosport 2 Polska
+
+# ---------------------------------------------------------------------
+# HOTBIRD 13E - França (BIS TV - Viaccess 0500)
+# ---------------------------------------------------------------------
+0500:041950:1F40:BFM TV
+0500:041950:1F41:RMC Découverte
+0500:041950:1F42:L'Équipe
+0500:041950:1F43:Toute l'Histoire
+0500:041950:1F44:Animaux
+0500:041950:1F45:AB Moteurs
+0500:041950:1F46:Trek
+0500:041950:1F47:Science & Vie TV
+0500:041950:1F48:Télétoon+
+0500:041950:1F49:Piwi+
+0500:041950:1F4A:Action
+0500:041950:1F4B:Crime District
+
+# --- Grecia (Nova - Irdeto) ---
+0604:0000:0064:Nova Sports 1
+0604:0000:0065:Nova Sports 2
+0604:0000:0066:Nova Sports 3
+0604:0000:0067:Nova Cinema 1
+0604:0000:0068:Nova Cinema 2
+0604:0000:0069:Nova Life
+0604:0000:006A:Alpha
+0604:0000:006B:ANT1
+
+# --- Internacionais (FTA no 13E) ---
+0000:0000:0C22:France 24
+0000:0000:0C23:TV5 Monde Europe
+0000:0000:0C24:Al Jazeera
+0000:0000:0C25:Bloomberg Europe
+0000:0000:0C26:DW English
+0000:0000:0C27:Euronews
+0000:0000:0C28:CNBC Europe
+0000:0000:0C29:BBC World News
+
+# ---------------------------------------------------------------------
+# HISPASAT 30W - Portugal (MEO / NOS - Seca 0100)
+# ---------------------------------------------------------------------
+0100:00E030:0132:RTP 1
+0100:00E030:0133:RTP 2
+0100:00E030:0134:SIC
+0100:00E030:0135:TVI
+0100:00E030:0136:SIC Notícias
+0100:00E030:0137:TVI24
+0100:00E030:0138:RTP 3
+0100:00E030:0139:SIC Mulher
+0100:00E030:013A:SIC Radical
+0100:00E030:013B:SIC K
+0100:00E030:013C:TVI Ficção
+0100:00E030:013D:TVI Reality
+0100:00E030:013E:Globo Portugal
+0100:00E030:013F:Record TV
+0100:00E030:0140:RTP Memória
+0100:00E030:0141:RTP África
+0100:00E030:0142:RTP Internacional
+0100:005221:0143:Sport TV 1
+0100:005221:0144:Sport TV 2
+0100:005221:0145:Sport TV 3
+0100:005221:0146:Sport TV 4
+0100:005221:0147:Sport TV 5
+0100:005221:0148:Sport TV 6
+0100:005221:0149:Sport TV +
+0100:005221:014A:Sport TV NBA
+0100:005221:014B:BTV
+0100:005221:014C:Benfica TV 1
+0100:005221:014D:Benfica TV 2
+0100:005221:014E:Sporting TV
+0100:005221:014F:FC Porto TV
+0100:005221:0150:Porto Canal
+0100:005221:0151:Hollywood
+0100:005221:0152:Canal Hollywood
+0100:005221:0153:AMC
+0100:005221:0154:FOX
+0100:005221:0155:FOX Life
+0100:005221:0156:FOX Crime
+0100:005221:0157:FOX Movies
+0100:005221:0158:AXN
+0100:005221:0159:AXN White
+0100:005221:015A:AXN Black
+0100:005221:015B:Syfy
+0100:005221:015C:Canal Panda
+0100:005221:015D:Disney Channel
+0100:005221:015E:Nickelodeon
+0100:005221:015F:Cartoon Network
+0100:005221:0160:Discovery
+0100:005221:0161:História
+0100:005221:0162:National Geographic
+0100:005221:0163:Odisseia
+0100:005221:0164:Eurosport 1
+0100:005221:0165:Eurosport 2
+
+# ---------------------------------------------------------------------
+# HISPASAT 30W - Espanha (Movistar+ - Nagra 1810/1861)
+# ---------------------------------------------------------------------
+1810:0000:1E00:La 1
+1810:0000:1E01:La 2
+1810:0000:1E02:Antena 3
+1810:0000:1E03:Cuatro
+1810:0000:1E04:Telecinco
+1810:0000:1E05:La Sexta
+1810:0000:1E06:#0
+1810:0000:1E07:Movistar LaLiga
+1810:0000:1E08:Movistar LaLiga 2
+1810:0000:1E09:Movistar Liga de Campeones
+1810:0000:1E0A:Movistar Estrenos
+1810:0000:1E0B:Movistar Estrenos 2
+1810:0000:1E0C:Movistar Acción
+1810:0000:1E0D:Movistar Comedia
+1810:0000:1E0E:Movistar Drama
+1810:0000:1E0F:Movistar Series
+1810:0000:1E10:Movistar Seriesmanía
+1810:0000:1E11:Movistar CineDoc&Roll
+1810:0000:1E12:Movistar Deportes
+1810:0000:1E13:Movistar Golf
+1810:0000:1E14:Movistar Fórmula 1
+1810:0000:1E15:Movistar MotoGP
+1810:0000:1E16:Vamos
+1810:0000:1E17:DAZN
+1810:0000:1E18:Toros
+1810:0000:1E19:24 Horas
+1810:0000:1E1A:Clan
+1810:0000:1E1B:Teledeporte
+1810:0000:1E1C:Neox
+1810:0000:1E1D:Nova
+1810:0000:1E1E:Mega
+1810:0000:1E1F:Atreseries
+
+# ---------------------------------------------------------------------
+# HISPASAT 30W - TDT Espanhol Abertis (BISS 2600)
+# (cada MUX transporta vários canais; a chave é por SID do MUX)
+# ---------------------------------------------------------------------
+2600:0000:0001:Abertis TDT MUX 1 (30W)
+2600:0000:0002:Abertis TDT MUX 2 (30W)
+2600:0000:0003:Abertis TDT MUX 3 (30W)
+2600:0000:0004:Abertis TDT MUX 4 (30W)
+2600:0000:0005:Abertis TDT MUX 5 (30W)
+2600:0000:0006:Abertis TDT MUX 6 (30W)
+2600:0000:0007:Abertis TDT MUX 7 (30W)
+2600:0000:0008:Abertis TDT MUX 8 (30W)
+2600:0000:0009:Abertis TDT MUX 9 (30W)
+2600:0000:000A:Abertis TDT MUX 10 (30W)
+2600:0000:000B:Abertis TDT MUX 11 (30W)
+2600:0000:000C:Abertis TDT MUX 12 (30W)
+2600:0000:000D:Abertis TDT MUX 13 (30W)
+2600:0000:000E:Abertis TDT MUX 14 (30W)
+2600:0000:000F:Abertis TDT MUX 15 (30W)
+2600:0000:0010:Abertis TDT MUX 16 (30W)
+2600:0000:0011:Abertis TDT MUX 17 (30W)
+2600:0000:0012:Abertis TDT MUX 18 (30W)
+2600:0000:0013:Abertis TDT MUX 19 (30W)
+2600:0000:0014:Abertis TDT MUX 20 (30W)
+2600:0000:0015:Abertis TDT MUX 21 (30W)
+2600:0000:0016:Abertis TDT MUX 22 (30W)
+2600:0000:0017:Abertis TDT MUX 23 (30W)
+2600:0000:0018:Abertis TDT MUX 24 (30W)
+2600:0000:0019:Abertis TDT MUX 25 (30W)
+2600:0000:001A:Abertis TDT MUX 26 (30W)
+2600:0000:001B:Abertis TDT MUX 27 (30W)
+2600:0000:001C:Abertis TDT MUX 28 (30W)
+2600:0000:001D:Abertis TDT MUX 29 (30W)
+2600:0000:001E:Abertis TDT MUX 30 (30W)
+2600:0000:001F:Abertis TDT MUX 31 (30W)
+2600:0000:0020:Abertis TDT MUX 32 (30W)
+2600:0000:0021:Abertis TDT MUX 33 (30W)
+2600:0000:0022:Abertis TDT MUX 34 (30W)
+2600:0000:0023:Abertis TDT MUX 35 (30W)
+2600:0000:0024:Abertis TDT MUX 36 (30W)
+2600:0000:0025:Abertis TDT MUX 37 (30W)
+2600:0000:0026:Abertis TDT MUX 38 (30W)
+2600:0000:0027:Abertis TDT MUX 39 (30W)
+2600:0000:0028:Abertis TDT MUX 40 (30W)
+
+# ---------------------------------------------------------------------
+# HISPASAT 30W - Feeds PowerVU (0E00) e BISS (2600)
+# ---------------------------------------------------------------------
+0E00:0000:0001:Feed PowerVU (30W)
+2600:0000:1FFF:BISS All Feeds (30W)

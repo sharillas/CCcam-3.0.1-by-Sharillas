@@ -88,6 +88,16 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
 
     // A cache e os leitores têm mutexes próprios (paralelismo entre ECMs)
     __atomic_add_fetch(&g_ecm_total_requests, 1, __ATOMIC_RELAXED);
+
+    // Regista o canal atual do cliente (para o painel web)
+    if (request->client_id != 0) {
+        cccam_client_t *c = cccam_client_find_by_id(request->client_id);
+        if (c) {
+            c->cur_caid = request->caid;
+            c->cur_sid = request->sid;
+            c->cur_channel_at = time(NULL);
+        }
+    }
     
     char info[64];
     ecm_log_info(request->caid, request->provid, request->sid, info, sizeof(info));

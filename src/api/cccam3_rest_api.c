@@ -10,6 +10,7 @@
 #include "cccam3_dvb.h"
 #include "cccam3_user_manager.h"
 #include "cccam3_emu.h"
+#include "cccam3_channels.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@
 #include <pthread.h>
 #include <time.h>
 #include <strings.h>
+#include <sys/stat.h>
 #include <openssl/sha.h>
 
 // --- Variáveis Globais ---
@@ -335,12 +337,24 @@ static void json_clients(char *buffer, size_t size) {
         cccam_client_t *client = cccam_client_get_by_index(i);
         if (!client) continue;
 
-        if (used + 256 > size) break;
+        if (used + 384 > size) break;
+
+        // Nome do canal que está a ver (via CCcam.channelinfo)
+        const char *channel = NULL;
+        const char *provider = NULL;
+        if (client->cur_sid != 0) {
+            channel = cccam_channels_get_name(client->cur_caid, 0, client->cur_sid);
+            if (!channel) {
+                channel = cccam_channels_get_name(0, 0, client->cur_sid);
+            }
+            provider = cccam_channels_get_provider(client->cur_caid, 0);
+        }
 
         used += (size_t)snprintf(buffer + used, size - used,
             "%s      { \"id\": %u, \"user\": \"%s\", \"ip\": \"%s\", "
             "\"newcamd\": %d, \"authenticated\": %d, \"connected_at\": %ld, "
-            "\"ecm_total\": %u }",
+            "\"ecm_total\": %u, \"sid\": %u, \"caid\": %u, "
+            "\"channel\": \"%s\", \"provider\": \"%s\" }",
             first ? "" : ",\n",
             client->client_id,
             client->username[0] != '\0' ? client->username : "-",
@@ -348,7 +362,11 @@ static void json_clients(char *buffer, size_t size) {
             client->is_newcamd,
             client->is_authenticated,
             (long)client->connected_at,
-            client->ecm_total);
+            client->ecm_total,
+            client->cur_sid,
+            client->cur_caid,
+            channel ? channel : "—",
+            provider ? provider : "—");
         first = 0;
     }
     snprintf(buffer + used, size - used, "\n    ]\n  }");
@@ -394,8 +412,162 @@ static void json_emu_keys(char *buffer, size_t size) {
 
 // --- Handler de Requisições HTTP ---
 
-static void handle_request(int client_fd, char *request, size_t request_len) {
-    char json[4096];
+// Ficheiros editáveis no painel (nome -> caminho real)
+static const char *g_editable_files[] = {
+    "cccam3.conf", "cccam3.users", "cccam3.readers",
+    "SoftCam.Key", "CCcam.providers", "CCcam.channelinfo"
+};
+#define EDITABLE_FILE_COUNT ((int)(sizeof(g_editable_files) / sizeof(g_editable_files[0])))
+
+// Resolve o caminho de um ficheiro editável (config -> /etc/cccam3 fallback)
+static int rest_file_path(const char *name, char *out, size_t out_size) {
+    int allowed = 0;
+    for (int i = 0; i < EDITABLE_FILE_COUNT; i++) {
+        if (strcmp(name, g_editable_files[i]) == 0) {
+            allowed = 1;
+            break;
+        }
+    }
+    if (!allowed) {
+        return -1;
+    }
+
+    cccam_config_t *cfg = cccam_get_config();
+
+    if (strcmp(name, "cccam3.conf") == 0) {
+        snprintf(out, out_size, "conf/cccam3.conf");
+    } else if (strcmp(name, "cccam3.users") == 0) {
+        snprintf(out, out_size, "%s", cfg->user_file[0] ? cfg->user_file : "conf/cccam3.users");
+    } else if (strcmp(name, "cccam3.readers") == 0) {
+        snprintf(out, out_size, "conf/cccam3.readers");
+    } else if (strcmp(name, "SoftCam.Key") == 0) {
+        snprintf(out, out_size, "%s", cfg->emu_key_file[0] ? cfg->emu_key_file : "conf/SoftCam.Key");
+    } else if (strcmp(name, "CCcam.providers") == 0) {
+        snprintf(out, out_size, "%s", cfg->providers_file[0] ? cfg->providers_file : "conf/CCcam.providers");
+    } else {
+        snprintf(out, out_size, "%s", cfg->channelinfo_file[0] ? cfg->channelinfo_file : "conf/CCcam.channelinfo");
+    }
+
+    // Fallback: /etc/cccam3/<nome> se o caminho relativo não existir
+    if (out[0] != '/' && access(out, R_OK) != 0) {
+        snprintf(out, out_size, "/etc/cccam3/%s", name);
+    }
+    return 0;
+}
+
+static void json_files(char *buffer, size_t size) {
+    size_t used = 0;
+    used += (size_t)snprintf(buffer + used, size - used,
+        "\"files\": {\n    \"list\": [\n");
+
+    for (int i = 0; i < EDITABLE_FILE_COUNT; i++) {
+        char path[256];
+        rest_file_path(g_editable_files[i], path, sizeof(path));
+        struct stat st;
+        long fsize = -1;
+        if (stat(path, &st) == 0) {
+            fsize = (long)st.st_size;
+        }
+        used += (size_t)snprintf(buffer + used, size - used,
+            "%s      { \"name\": \"%s\", \"path\": \"%s\", \"size\": %ld }",
+            i > 0 ? ",\n" : "",
+            g_editable_files[i], path, fsize);
+    }
+    snprintf(buffer + used, size - used, "\n    ]\n  }");
+}
+
+static void json_file_content(char *buffer, size_t size, const char *name) {
+    char path[256];
+    FILE *fp;
+    long fsize;
+
+    if (rest_file_path(name, path, sizeof(path)) != 0) {
+        snprintf(buffer, size, "{\"result\": \"not_allowed\"}");
+        return;
+    }
+
+    fp = fopen(path, "r");
+    if (!fp) {
+        snprintf(buffer, size, "{\"result\": \"not_found\", \"path\": \"%s\"}", path);
+        return;
+    }
+    fseek(fp, 0, SEEK_END);
+    fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (fsize < 0) fsize = 0;
+    if (fsize > (long)(size - 64)) fsize = (long)(size - 64);
+
+    size_t off = 0;
+    off += (size_t)snprintf(buffer + off, size - off,
+        "{\n  \"result\": \"ok\",\n  \"name\": \"%s\",\n  \"path\": \"%s\",\n  \"content\": \"",
+        name, path);
+    for (long i = 0; i < fsize; i++) {
+        int ch = fgetc(fp);
+        if (ch == EOF) break;
+        switch (ch) {
+            case '\\': buffer[off++] = '\\'; buffer[off++] = '\\'; break;
+            case '"':  buffer[off++] = '\\'; buffer[off++] = '"'; break;
+            case '\n': buffer[off++] = '\\'; buffer[off++] = 'n'; break;
+            case '\r': buffer[off++] = '\\'; buffer[off++] = 'r'; break;
+            case '\t': buffer[off++] = '\\'; buffer[off++] = 't'; break;
+            default:
+                if (ch >= 0x20 && ch < 0x7F) buffer[off++] = (char)ch;
+                break;
+        }
+        if (off >= size - 8) break;
+    }
+    fclose(fp);
+    snprintf(buffer + off, size - off, "\"\n}");
+}
+
+// Guarda o conteúdo de um ficheiro e aplica o reload correspondente
+static void rest_file_save(const char *name, const char *content, size_t content_len,
+                           char *resp, size_t resp_size) {
+    char path[256];
+    char tmp[280];
+
+    if (rest_file_path(name, path, sizeof(path)) != 0) {
+        snprintf(resp, resp_size, "{\"result\": \"not_allowed\"}");
+        return;
+    }
+
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    FILE *fp = fopen(tmp, "w");
+    if (!fp) {
+        snprintf(resp, resp_size, "{\"result\": \"write_error\"}");
+        return;
+    }
+    fwrite(content, 1, content_len, fp);
+    fclose(fp);
+    if (rename(tmp, path) != 0) {
+        unlink(tmp);
+        snprintf(resp, resp_size, "{\"result\": \"write_error\"}");
+        return;
+    }
+
+    // Aplica o reload adequado
+    const char *action = "";
+    if (strcmp(name, "cccam3.users") == 0) {
+        cccam_user_manager_reload();
+        action = "users_reloaded";
+    } else if (strcmp(name, "cccam3.readers") == 0) {
+        cccam_card_manager_reload();
+        action = "readers_reloaded";
+    } else if (strcmp(name, "SoftCam.Key") == 0) {
+        cccam_emu_reload();
+        action = "keys_reloaded";
+    } else if (strcmp(name, "CCcam.providers") == 0 || strcmp(name, "CCcam.channelinfo") == 0) {
+        cccam_channels_init();
+        action = "channels_reloaded";
+    } else {
+        action = "restart_required";
+    }
+
+    snprintf(resp, resp_size, "{\"result\": \"ok\", \"action\": \"%s\"}", action);
+}
+
+static void handle_request(int client_fd, char *request, size_t request_len, size_t body_len) {
+    char json[8192];
     char method[16] = "";
     char path[512] = "";
     char auth_header[256] = "";
@@ -411,7 +583,7 @@ static void handle_request(int client_fd, char *request, size_t request_len) {
         return;
     }
 
-    if (strcmp(method, "GET") != 0) {
+    if (strcmp(method, "GET") != 0 && strcmp(method, "POST") != 0) {
         send_http_response(client_fd, 400, "Bad Request", "text/plain", "Método não suportado\n");
         return;
     }
@@ -444,6 +616,35 @@ static void handle_request(int client_fd, char *request, size_t request_len) {
     // --- Rotas ---
     if (strcmp(path, "/") == 0 || strcmp(path, "/status") == 0) {
         json_server_status(json, sizeof(json));
+        send_json_response(client_fd, json);
+    } else if (strcmp(path, "/files") == 0) {
+        json_files(json, sizeof(json));
+        send_json_response(client_fd, json);
+    } else if (strncmp(path, "/files/get", 10) == 0) {
+        char name[64];
+        if (get_query_param(path, "name", name, sizeof(name)) == 0) {
+            json_file_content(json, sizeof(json), name);
+        } else {
+            snprintf(json, sizeof(json), "{\"result\": \"missing_name\"}");
+        }
+        send_json_response(client_fd, json);
+    } else if (strncmp(path, "/files/save", 11) == 0) {
+        char name[64];
+        if (strcmp(method, "POST") != 0) {
+            send_http_response(client_fd, 400, "Bad Request", "text/plain", "Usar POST\n");
+            return;
+        }
+        if (get_query_param(path, "name", name, sizeof(name)) == 0) {
+            char *body = strstr(request, "\r\n\r\n");
+            if (body) {
+                body += 4;
+                rest_file_save(name, body, body_len, json, sizeof(json));
+            } else {
+                snprintf(json, sizeof(json), "{\"result\": \"no_body\"}");
+            }
+        } else {
+            snprintf(json, sizeof(json), "{\"result\": \"missing_name\"}");
+        }
         send_json_response(client_fd, json);
     } else if (strncmp(path, "/clients/kick", 13) == 0) {
         char id_str[16];
@@ -605,7 +806,7 @@ started:
                 continue;
             }
             
-            // Lê o pedido até ao fim dos cabeçalhos (\r\n\r\n)
+            // Lê o pedido: cabeçalhos até \r\n\r\n e corpo (Content-Length)
             char buffer[REST_API_MAX_BUFFER];
             size_t received = 0;
             int done = 0;
@@ -622,9 +823,30 @@ started:
                     done = 1;
                 }
             }
-            
+
             if (done == 1) {
-                handle_request(client_fd, buffer, received);
+                // Corpo de um POST (Content-Length)
+                char *body_start = strstr(buffer, "\r\n\r\n");
+                size_t header_len = (size_t)(body_start - buffer) + 4;
+                size_t body_len = 0;
+
+                char *cl = strcasestr(buffer, "Content-Length:");
+                if (cl) {
+                    body_len = (size_t)atol(cl + 15);
+                }
+
+                size_t already = received > header_len ? received - header_len : 0;
+                if (already > body_len) already = body_len;
+
+                while (already < body_len && received < sizeof(buffer) - 1) {
+                    ssize_t n = recv(client_fd, buffer + received,
+                                     sizeof(buffer) - 1 - received, 0);
+                    if (n <= 0) break;
+                    received += (size_t)n;
+                    already += (size_t)n;
+                }
+
+                handle_request(client_fd, buffer, received, body_len);
             }
             close(client_fd);
         }

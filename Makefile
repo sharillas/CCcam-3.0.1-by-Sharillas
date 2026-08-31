@@ -37,6 +37,7 @@ SOURCES = $(SRC_DIR)/core/cccam3_server.c \
           $(SRC_DIR)/CCshare/cccam3_card_manager.c \
           $(SRC_DIR)/CCshare/cccam3_hop_control.c \
           $(SRC_DIR)/CCshare/cccam3_user_manager.c \
+          $(SRC_DIR)/CCshare/cccam3_channels.c \
           $(SRC_DIR)/CCshare/cccam3_emu.c \
           $(SRC_DIR)/CCshare/cccam3_emu_des.c \
           $(SRC_DIR)/CCshare/cccam3_emu_idea.c \

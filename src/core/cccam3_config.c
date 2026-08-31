@@ -80,6 +80,10 @@ static void parse_key_value(char *line, cccam_config_t *config, const char *sect
             strncpy(config->deny_ips, value, sizeof(config->deny_ips) - 1);
         } else if (strcmp(key, "pid_file") == 0) {
             strncpy(config->pid_file, value, sizeof(config->pid_file) - 1);
+        } else if (strcmp(key, "providers_file") == 0) {
+            strncpy(config->providers_file, value, sizeof(config->providers_file) - 1);
+        } else if (strcmp(key, "channelinfo_file") == 0) {
+            strncpy(config->channelinfo_file, value, sizeof(config->channelinfo_file) - 1);
         }
     } else if (strcmp(section, "logging") == 0) {
         if (strcmp(key, "level") == 0 || strcmp(key, "log_level") == 0) {

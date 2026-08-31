@@ -1,5 +1,7 @@
 #include "cccam3_web_interface.h"
 #include "cccam3_logger.h"
+#include "cccam3.h"
+#include "cccam3_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -87,7 +89,7 @@ static const char *WEB_PAGE_HTML =
 "</head>\n"
 "<body>\n"
 "<header class=\"topbar\">\n"
-"  <div class=\"brand\"><div class=\"logo\">C3</div><div><div class=\"name\">CCcam3</div><div class=\"sub\">Servidor de partilha</div></div></div>\n"
+"  <div class=\"brand\"><div class=\"logo\">C3</div><div><div class=\"name\">CCcam __VERSION__</div><div class=\"sub\">by Sharillas@2026</div></div></div>\n"
 "  <div class=\"status\"><span class=\"dot\" id=\"dot\"></span><span id=\"statusText\">a ligar…</span><span class=\"sep\">·</span><span id=\"uptime\"></span></div>\n"
 "  <div class=\"actions\">\n"
 "    <span class=\"last-update\" id=\"lastUpdate\"></span>\n"
@@ -118,8 +120,23 @@ static const char *WEB_PAGE_HTML =
 "  </section>\n"
 "  <section class=\"card\" style=\"margin-bottom:20px;\">\n"
 "    <div class=\"card-head\"><h2>Clientes ligados</h2><span class=\"pill\" id=\"pillClients\">0</span></div>\n"
-"    <table><thead><tr><th>Utilizador</th><th>IP</th><th>Protocolo</th><th>Ligado há</th><th>ECMs</th><th></th></tr></thead>\n"
-"    <tbody id=\"clientsBody\"><tr><td colspan=\"6\" class=\"empty\">Sem clientes ligados</td></tr></tbody></table>\n"
+"    <table><thead><tr><th>Utilizador</th><th>IP</th><th>Protocolo</th><th>Canal</th><th>Ligado há</th><th>ECMs</th><th></th></tr></thead>\n"
+"    <tbody id=\"clientsBody\"><tr><td colspan=\"7\" class=\"empty\">Sem clientes ligados</td></tr></tbody></table>\n"
+"  </section>\n"
+"  <section class=\"card\" style=\"margin-bottom:20px;\">\n"
+"    <div class=\"card-head\"><h2>Utilizadores</h2><span class=\"pill\" id=\"pillUsers\">0</span></div>\n"
+"    <table><thead><tr><th>Nome</th><th>Nível</th><th>Max hops</th><th>Estado</th><th>Logins</th><th>ECM OK</th><th>ECM NOK</th></tr></thead>\n"
+"    <tbody id=\"usersBody\"><tr><td colspan=\"7\" class=\"empty\">Sem utilizadores</td></tr></tbody></table>\n"
+"  </section>\n"
+"  <section class=\"card\" style=\"margin-bottom:20px;\">\n"
+"    <div class=\"card-head\"><h2>Ficheiros</h2><span class=\"pill\">editar</span></div>\n"
+"    <div style=\"display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;\">\n"
+"      <select id=\"fileSelect\" style=\"flex:1; min-width:180px; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:13px;\"></select>\n"
+"      <button class=\"btn primary\" id=\"btnFileSave\">💾 Guardar</button>\n"
+"      <button class=\"btn ghost\" id=\"btnFileReload\">⟳ Recarregar</button>\n"
+"    </div>\n"
+"    <textarea id=\"fileEditor\" spellcheck=\"false\" style=\"width:100%; height:340px; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:12px; font-family:Consolas,Monaco,monospace; font-size:12.5px; resize:vertical; line-height:1.4;\"></textarea>\n"
+"    <div class=\"status-text\" id=\"fileInfo\" style=\"color:var(--muted); font-size:11.5px; margin-top:8px;\"></div>\n"
 "  </section>\n"
 "  <section class=\"grid\">\n"
 "    <div class=\"card\">\n"
@@ -133,13 +150,18 @@ static const char *WEB_PAGE_HTML =
 "    </div>\n"
 "  </section>\n"
 "</main>\n"
-"<footer>CCcam3 · v<span id=\"verFooter\">—</span> · GPLv3</footer>\n"
+"<footer>CCcam __VERSION__ - build.__BUILD__ - All rights reserved - Sharillas@2026</footer>\n"
 "<div id=\"toast\"></div>\n"
 "<script>\n"
 "const H = []; let paused = false, lastTotal = 0;\n"
 "const $ = id => document.getElementById(id);\n"
-"async function api(path, method) {\n"
-"  try { const r = await fetch(path, { method: method || 'GET' }); return await r.json(); } catch { return null; }\n"
+"async function api(path, method, body) {\n"
+"  try {\n"
+"    const opts = { method: method || 'GET', headers: {} };\n"
+"    if (body !== undefined) { opts.body = body; opts.headers['Content-Type'] = 'text/plain'; }\n"
+"    const r = await fetch(path, opts);\n"
+"    return await r.json();\n"
+"  } catch { return null; }\n"
 "}\n"
 "function toast(msg, ok) {\n"
 "  const t = $('toast'); t.textContent = msg; t.className = ok ? 'show ok' : 'show err';\n"
@@ -175,13 +197,12 @@ static const char *WEB_PAGE_HTML =
 "  ctx.lineTo(W, h); ctx.lineTo(0, h); ctx.closePath(); ctx.fillStyle = g; ctx.fill();\n"
 "}\n"
 "async function refresh() {\n"
-"  const [status, ecm, cache, clients, readers, emu] = await Promise.all([\n"
-"    api('/status'), api('/stats/ecm'), api('/stats/cache'), api('/clients'), api('/readers'), api('/emu/keys')\n"
+"  const [status, ecm, cache, clients, readers, emu, users] = await Promise.all([\n"
+"    api('/status'), api('/stats/ecm'), api('/stats/cache'), api('/clients'), api('/readers'), api('/emu/keys'), api('/users')\n"
 "  ]);\n"
 "  if (status && status.server) {\n"
 "    $('dot').className = 'dot on'; $('statusText').textContent = 'online';\n"
 "    $('uptime').textContent = 'up ' + fmtUptime(status.server.uptime);\n"
-"    $('verFooter').textContent = status.server.version || '—';\n"
 "    $('kClients').textContent = status.server.clients || 0;\n"
 "    const info = [\n"
 "      ['Porta CCcam', status.server.port], ['Porta Newcamd', status.server.newcamd_port || '—'],\n"
@@ -210,10 +231,24 @@ static const char *WEB_PAGE_HTML =
 "  if (clients && clients.clients) {\n"
 "    const list = clients.clients.list || [];\n"
 "    $('pillClients').textContent = list.length;\n"
-"    if (!list.length) { $('clientsBody').innerHTML = '<tr><td colspan=\"6\" class=\"empty\">Sem clientes ligados</td></tr>'; }\n"
-"    else $('clientsBody').innerHTML = list.map(c =>\n"
-"      `<tr><td>${c.user || '—'}</td><td>${c.ip}</td><td>${c.newcamd ? 'Newcamd' : 'CCcam'}</td><td>${fmtAgo(c.connected_at)}</td><td>${c.ecm_total || 0}</td><td><button class=\"kick\" data-id=\"${c.id}\">Expulsar</button></td></tr>`\n"
-"    ).join('');\n"
+"    if (!list.length) { $('clientsBody').innerHTML = '<tr><td colspan=\"7\" class=\"empty\">Sem clientes ligados</td></tr>'; }\n"
+"    else $('clientsBody').innerHTML = list.map(c => {\n"
+"      const chan = c.channel && c.channel !== '—' ? `${c.channel} <span style=\"color:var(--muted);font-size:11px;\">(${c.provider})</span>` : '—';\n"
+"      return `<tr><td>${c.user || '—'}</td><td>${c.ip}</td><td>${c.newcamd ? 'Newcamd' : 'CCcam'}</td><td>${chan}</td><td>${fmtAgo(c.connected_at)}</td><td>${c.ecm_total || 0}</td><td><button class=\"kick\" data-id=\"${c.id}\">Expulsar</button></td></tr>`;\n"
+"    }).join('');\n"
+"  }\n"
+"  if (users && users.users) {\n"
+"    const list = users.users.list || [];\n"
+"    $('pillUsers').textContent = list.length;\n"
+"    if (!list.length) { $('usersBody').innerHTML = '<tr><td colspan=\"7\" class=\"empty\">Sem utilizadores</td></tr>'; }\n"
+"    else {\n"
+"      const levels = ['Desativado', 'User', 'Admin', 'Root'];\n"
+"      $('usersBody').innerHTML = list.map(u =>\n"
+"        `<tr><td>${u.name}</td><td>${levels[u.level] || u.level}</td><td>${u.max_hops}</td>` +\n"
+"        `<td>${u.enabled ? '<span class=\"badge ok\">Ativo</span>' : '<span class=\"badge err\">Desativado</span>'}</td>` +\n"
+"        `<td>${u.logins || 0}</td><td style=\"color:var(--green);\">${u.ecm_ok || 0}</td><td style=\"color:var(--red);\">${(u.ecm||0) - (u.ecm_ok||0)}</td></tr>`\n"
+"      ).join('');\n"
+"    }\n"
 "  }\n"
 "  if (readers && readers.readers_list) {\n"
 "    const list = readers.readers_list.list || [];\n"
@@ -259,12 +294,66 @@ static const char *WEB_PAGE_HTML =
 "  $('btnPause').textContent = paused ? '▶ Retomar' : '⏸ Pausar';\n"
 "  $('btnPause').classList.toggle('paused', paused);\n"
 "};\n"
+"// --- Editor de ficheiros ---\n"
+"let filesList = [];\n"
+"async function loadFiles() {\n"
+"  const r = await api('/files');\n"
+"  if (r && r.files) {\n"
+"    filesList = r.files.list || [];\n"
+"    $('fileSelect').innerHTML = filesList.map(f => `<option value=\"${f.name}\">${f.name} (${f.path})</option>`).join('');\n"
+"    if (filesList.length) loadFile(filesList[0].name);\n"
+"  }\n"
+"}\n"
+"async function loadFile(name) {\n"
+"  const r = await api('/files/get?name=' + encodeURIComponent(name));\n"
+"  if (r && r.result === 'ok') {\n"
+"    $('fileEditor').value = r.content;\n"
+"    $('fileInfo').textContent = r.path;\n"
+"  } else {\n"
+"    $('fileInfo').textContent = 'Não foi possível carregar: ' + (r ? r.result : 'erro');\n"
+"  }\n"
+"}\n"
+"$('fileSelect').onchange = e => loadFile(e.target.value);\n"
+"$('btnFileReload').onclick = () => loadFile($('fileSelect').value);\n"
+"$('btnFileSave').onclick = async () => {\n"
+"  const name = $('fileSelect').value;\n"
+"  const r = await api('/files/save?name=' + encodeURIComponent(name), 'POST', $('fileEditor').value);\n"
+"  if (r && r.result === 'ok') {\n"
+"    const msg = r.action === 'restart_required' ? 'Guardado! (reinicia o servidor para aplicar)' : 'Guardado e aplicado!';\n"
+"    toast(msg, true);\n"
+"  } else {\n"
+"    toast('Falha ao guardar', false);\n"
+"  }\n"
+"  refresh();\n"
+"};\n"
 "refresh(); setInterval(() => { if (!paused) refresh(); }, 5000);\n"
+"loadFiles();\n"
 "</script>\n"
 "</body>\n"
 "</html>";
 
 // --- Função para servir a página web ---
+
+// Substitui todas as ocorrências de "from" por "to" em str
+static void str_replace_all(char *str, size_t capacity, const char *from, const char *to) {
+    size_t from_len = strlen(from);
+    size_t to_len = strlen(to);
+    if (from_len == 0) return;
+
+    char *pos = str;
+    while ((pos = strstr(pos, from)) != NULL) {
+        size_t tail_len = strlen(pos + from_len);
+        if (to_len > from_len) {
+            if (strlen(str) + (to_len - from_len) >= capacity) return;
+            memmove(pos + to_len, pos + from_len, tail_len + 1);
+        } else {
+            memmove(pos + to_len, pos + from_len, tail_len + 1);
+        }
+        memcpy(pos, to, to_len);
+        pos += to_len;
+    }
+}
+
 void cccam_web_interface_serve(int client_fd) {
     const char *header_fmt =
         "HTTP/1.1 200 OK\r\n"
@@ -273,20 +362,33 @@ void cccam_web_interface_serve(int client_fd) {
         "Content-Length: %zu\r\n"
         "\r\n";
 
-    size_t body_len = strlen(WEB_PAGE_HTML);
+    // Cópia da página com os placeholders substituídos
+    size_t page_cap = strlen(WEB_PAGE_HTML) + 128;
+    char *page = malloc(page_cap);
+    if (!page) {
+        close(client_fd);
+        return;
+    }
+    memcpy(page, WEB_PAGE_HTML, strlen(WEB_PAGE_HTML) + 1);
+    str_replace_all(page, page_cap, "__VERSION__", CCCAM3_VERSION);
+    str_replace_all(page, page_cap, "__BUILD__", cccam3_build_id());
+
+    size_t body_len = strlen(page);
     int needed = snprintf(NULL, 0, header_fmt, body_len) + 1;
     needed += (int)body_len;
 
     char *response = malloc((size_t)needed);
     if (!response) {
+        free(page);
         close(client_fd);
         return;
     }
 
     int written = snprintf(response, (size_t)needed, header_fmt, body_len);
     if (written > 0) {
-        memcpy(response + written, WEB_PAGE_HTML, body_len + 1);
+        memcpy(response + written, page, body_len + 1);
     }
+    free(page);
 
     // Envia tudo (trata escritas parciais)
     size_t total = strlen(response);

@@ -34,6 +34,9 @@ typedef struct {
     time_t ecm_window_start;   // Rate limit de ECMs por cliente
     int ecm_window_count;
     uint32_t ecm_total;        // Total de ECMs pedidos (para o painel)
+    uint16_t cur_caid;         // CAID do canal que está a ver agora
+    uint16_t cur_sid;          // SID do canal que está a ver agora
+    time_t cur_channel_at;     // Quando pediu o último ECM
     uint8_t node_id[8];
     struct sockaddr_in addr;
     cccam_crypto_ctx_t crypto;
@@ -117,6 +120,8 @@ typedef struct {
     int max_login_failures;      // Falhas de login por IP antes de bloquear
     char allow_ips[256];         // Lista de IPs permitidos (vazio = todos)
     char deny_ips[256];          // Lista de IPs bloqueados
+    char providers_file[256];    // CCcam.providers (nomes de provedores)
+    char channelinfo_file[256];  // CCcam.channelinfo (nomes de canais)
     int enable_cache;
     int cache_timeout;
     int enable_logging;

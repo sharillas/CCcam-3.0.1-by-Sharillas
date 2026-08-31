@@ -345,7 +345,7 @@ static int ncd_handle_ecm(int fd, cccam_newcamd_session_t *session,
     request.ecm_len = (uint16_t)(msg->data_len + 3);
     memcpy(request.ecm_data, section, request.ecm_len);
     request.received_at = time(NULL);
-    request.client_id = 0;
+    request.client_id = session->client_id;
 
     // Limite de hops do utilizador (0 = ilimitado)
     cccam_user_t *user = cccam_user_manager_get_user(session->username);

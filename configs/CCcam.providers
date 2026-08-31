@@ -1,0 +1,47 @@
+# =====================================================================
+#  CCcam.providers - Nomes dos provedores por sistema
+#
+#  Formato:  caid:provid:nome_do_provedor    (hex:hex:nome)
+#
+#  Base curada para Astra 19.2E, Hotbird 13E e Hispasat 30W.
+#  Se um provedor mudar de identificador, atualiza a linha.
+# =====================================================================
+
+# --- Viaccess (0500) ---
+0500:030B00:TNTSAT (França)
+0500:032820:TNT France
+0500:025810:Viaccess (TNT)
+0500:041950:BIS TV (França)
+0500:022610:Canal+ France
+0500:021110:Viaccess (Canal+)
+
+# --- Seca/Mediaguard (0100) ---
+0100:00006A:Canal Digitaal (Holanda)
+0100:00006C:TV Vlaanderen (Bélgica)
+0100:0000C0:NC+ (Polónia)
+0100:000068:Cyfra+ (Polónia)
+0100:00E030:MEO (Portugal)
+0100:005221:NOS (Portugal)
+0100:000051:Sport TV (Portugal)
+
+# --- Cryptoworks / Irdeto (ORF, Austria) ---
+0D95:000004:ORF Digital (Áustria)
+0648:000000:Irdeto (ORF Digital)
+0650:000000:Irdeto (AustriaSat)
+
+# --- NDS VideoGuard ---
+098C:000000:Sky Deutschland
+0919:000000:Sky Italia
+093B:000000:Sky Italia
+
+# --- Nagravision ---
+1843:000000:HD+ (Alemanha)
+1860:000000:HD+ (Alemanha)
+1810:000000:Movistar+ (Espanha)
+1861:000000:Cyfrowy Polsat / Movistar+
+183D:000000:Tivùsat (Itália)
+183E:000000:Tivùsat (Itália)
+
+# --- EMU ---
+2600:000000:BISS (Feeds e Abertis TDT)
+0E00:000000:PowerVU (Feeds)
