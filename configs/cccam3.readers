@@ -1,0 +1,93 @@
+# =====================================================================
+#  CCcam3 - Lista de leitores (de onde vêm as chaves/CWs)
+#  (explicado em linguagem simples)
+#
+#  Sem leitores, o servidor não tem chaves para dar — não abre nada.
+#  Cada leitor é um bloco [nome] com um "type":
+#
+#    type = emu      -> chaves do ficheiro SoftCam.Key (sem cartão!)
+#    type = remote   -> outro servidor de share que tem os cartões
+#    type = local    -> um cartão real ligado por leitor PC/SC (Seca/Conax)
+#
+#  Opções comuns a todos:
+#    caid      = o sistema que este leitor serve (hex). 0000 = todos.
+#                (0500=Viaccess, 0100=Seca, 0D95=Cryptoworks, 0E00=PowerVU...)
+#    provid    = o provedor específico (hex). 0000 = todos.
+#    hop       = a que "distância" está a origem (0 = cartão real).
+#    priority  = quem é usado primeiro. 0 = primeiro, 1 = segundo, etc.
+#    enabled   = 1 ligado, 0 desligado.
+#
+#  Os números caid/provid são hexadecimais (aceitam letras A-F).
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# 1) O leitor de EMULAÇÃO — abre canais SEM cartão, usando o SoftCam.Key.
+#    Cobre: BISS (feeds/Abertis), Viaccess (TNTSAT/BIS), Cryptoworks
+#    (ORF), PowerVU (feeds), Nagra2 e Irdeto2.
+#    Isto é o coração do servidor para quem não tem cartões.
+# ---------------------------------------------------------------------
+[EMU_Reader]
+type = emu
+caid = 0000
+provid = 0000
+hop = 0
+priority = 0
+enabled = 1
+
+
+# ---------------------------------------------------------------------
+# 2) Leitor REMOTO — vai buscar chaves a outro servidor de share.
+#    É assim que se partilham cartões de Nagra/NDS/Seca/etc.:
+#    o outro servidor tem o cartão e tu pedes-lhe as chaves.
+# ---------------------------------------------------------------------
+[Remote_Reader]
+type = remote
+caid = 0500
+provid = 0000
+hop = 2
+priority = 1
+enabled = 1
+
+# O endereço do outro servidor (usa IP, não nomes)
+remote_host = 127.0.0.1
+
+# A porta dele
+remote_port = 12001
+
+# O utilizador e a password que ELE te deu
+remote_user = user
+remote_pass = pass
+
+
+# ---------------------------------------------------------------------
+# 3) Leitor LOCAL — um cartão real ligado ao teu servidor por leitor
+#    USB PC/SC (suporta Seca/Mediaguard 0x0100 e Conax 0x0B00).
+#    Para compilar o servidor com este suporte:  make USE_PCSC=1
+# ---------------------------------------------------------------------
+[Local_Reader]
+type = local
+caid = 0100
+provid = 0000
+hop = 1
+priority = 0
+enabled = 1
+
+# O nome do leitor de cartões como aparece no sistema.
+# Comenta a linha (#) para usar o primeiro leitor encontrado.
+# device = Identiv uTrust 3700 F CL Reader 00 00
+
+
+# ---------------------------------------------------------------------
+# Exemplo de um segundo leitor remoto (vários provedores):
+# ---------------------------------------------------------------------
+# [Remote_Viaccess]
+# type = remote
+# caid = 0500
+# provid = 0000
+# hop = 1
+# priority = 2
+# enabled = 1
+# remote_host = 192.168.1.50
+# remote_port = 12000
+# remote_user = amigo
+# remote_pass = passworddele

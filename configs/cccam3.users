@@ -1,0 +1,57 @@
+# =====================================================================
+#  CCcam3 - Lista de utilizadores (os teus clientes)
+#  (explicado em linguagem simples)
+#
+#  Cada cliente é um bloco que começa com o nome dele entre [parênteses
+#  retos], seguido das definições:
+#
+#    [nome-do-cliente]      <- como ele se vai identificar ao ligar
+#    password = ...         <- a password dele
+#    level = ...            <- o "cargo" (ver abaixo)
+#    max_hops = ...         <- até que distância pode ele repassar
+#
+#  O que é o "level" (cargo)?
+#    0 = desativado (está na lista mas não entra)
+#    1 = User   (cliente normal — o que dás aos amigos)
+#    2 = Admin  (pode gerir algumas coisas)
+#    3 = Root   (dono — acesso total)
+#
+#  O que é o "max_hops"?
+#    É o limite de saltos que este cliente pode receber.
+#    0 = sem limite (confia totalmente nele)
+#    1 = só chaves do próprio servidor
+#    2 = permite que ele repasse a um amigo
+#
+#  SEGURANÇA: usa passwords compridas e diferentes para cada cliente.
+#  Não uses "123456" — é a primeira coisa que os intrusos tentam!
+# =====================================================================
+
+# O dono do servidor (NUNCA apagues este).
+[admin]
+password = admin123
+level = 3
+max_hops = 0
+
+# Exemplo de um cliente normal (amigo):
+[cliente1]
+password = 123456
+level = 1
+max_hops = 2
+
+# Exemplo de um cliente em quem confias mais (pode repassar a outros):
+[cliente2]
+password = senha123
+level = 1
+max_hops = 3
+
+# Exemplo de um cliente para testes:
+[teste]
+password = teste
+level = 1
+max_hops = 1
+
+# Para desativar um cliente sem o apagar, muda o level para 0:
+# [ex-cliente]
+# password = qqcoisa
+# level = 0
+# max_hops = 1
