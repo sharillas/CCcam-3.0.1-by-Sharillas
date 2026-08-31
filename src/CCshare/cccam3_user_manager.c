@@ -400,8 +400,38 @@ int cccam_user_manager_load_from_config(const char *config_file) {
     return 0;
 }
 
+int cccam_user_manager_reload(void) {
+    cccam_user_t *current = g_users;
+    while (current) {
+        cccam_user_t *next = current->next;
+        free(current);
+        current = next;
+    }
+    g_users = NULL;
+    g_user_count = 0;
+    g_next_user_id = 1;
+
+    cccam_user_manager_load_from_config(g_users_file);
+
+    if (g_user_count == 0) {
+        cccam_user_manager_add_user("admin", "admin123", USER_LEVEL_ROOT, 0);
+        cccam_log(LOG_WARN, "CCshare: Utilizador admin criado (password: admin123) - ALTERE A PASSWORD!");
+    }
+
+    cccam_log(LOG_INFO, "CCshare: Utilizadores recarregados (%d)", g_user_count);
+    return 0;
+}
+
 int cccam_user_manager_get_count(void) {
     return g_user_count;
+}
+
+cccam_user_t *cccam_user_manager_get_by_index(int index) {
+    cccam_user_t *current = g_users;
+    for (int i = 0; current && i < index; i++) {
+        current = current->next;
+    }
+    return current;
 }
 
 void cccam_user_manager_debug_print(void) {

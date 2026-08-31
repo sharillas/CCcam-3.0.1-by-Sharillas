@@ -111,6 +111,9 @@ void cccam_card_manager_get_stats(int *total_readers, int *active_readers,
 // Carrega leitores a partir de um ficheiro de configuração
 int cccam_card_manager_load_from_config(const char *config_file);
 
+// Recarrega os leitores do ficheiro configurado (em runtime)
+int cccam_card_manager_reload(void);
+
 // Define o caminho do ficheiro de leitores (usado no init)
 void cccam_card_manager_set_config_file(const char *path);
 

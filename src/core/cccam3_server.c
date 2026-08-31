@@ -21,6 +21,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -29,12 +30,194 @@ static int g_server_fd = -1;
 static int g_newcamd_fd = -1;
 static int g_running = 1;
 static volatile sig_atomic_t g_reload_requested = 0;
+static volatile sig_atomic_t g_rotate_requested = 0;
 static cccam_config_t g_config;
 
-// Handler para sinais (CTRL+C, SIGHUP para recarregar chaves EMU, etc.)
+// --- Listas de IPs (allow/deny) ---
+
+#define SERVER_MAX_IP_ENTRIES 64
+static uint32_t g_allow_ips[SERVER_MAX_IP_ENTRIES];
+static int g_allow_ip_prefix[SERVER_MAX_IP_ENTRIES];
+static int g_allow_count = 0;
+static uint32_t g_deny_ips[SERVER_MAX_IP_ENTRIES];
+static int g_deny_ip_prefix[SERVER_MAX_IP_ENTRIES];
+static int g_deny_count = 0;
+
+// Converte um IP em network byte order e devolve o prefixo (1-4 octetos)
+static int parse_ip_entry(const char *entry, uint32_t *ip_out) {
+    // Suporta "a.b.c.d" ou prefixos "a.b" / "a.b.c"
+    unsigned int a = 0, b = 0, c = 0, d = 0;
+    int parts = sscanf(entry, "%u.%u.%u.%u", &a, &b, &c, &d);
+    if (parts < 1 || a > 255 || b > 255 || c > 255 || d > 255) {
+        return -1;
+    }
+    *ip_out = htonl((a << 24) | (b << 16) | (c << 8) | d);
+    return parts;
+}
+
+static void server_load_ip_lists(void) {
+    char buf[256];
+    char *save = NULL;
+
+    g_allow_count = 0;
+    if (g_config.allow_ips[0] != '\0') {
+        strncpy(buf, g_config.allow_ips, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        char *tok = strtok_r(buf, ", \t", &save);
+        while (tok && g_allow_count < SERVER_MAX_IP_ENTRIES) {
+            uint32_t ip = 0;
+            int parts = parse_ip_entry(tok, &ip);
+            if (parts > 0) {
+                g_allow_ips[g_allow_count] = ip;
+                g_allow_ip_prefix[g_allow_count] = parts;
+                g_allow_count++;
+            }
+            tok = strtok_r(NULL, ", \t", &save);
+        }
+    }
+
+    g_deny_count = 0;
+    if (g_config.deny_ips[0] != '\0') {
+        strncpy(buf, g_config.deny_ips, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        char *tok = strtok_r(buf, ", \t", &save);
+        while (tok && g_deny_count < SERVER_MAX_IP_ENTRIES) {
+            uint32_t ip = 0;
+            int parts = parse_ip_entry(tok, &ip);
+            if (parts > 0) {
+                g_deny_ips[g_deny_count] = ip;
+                g_deny_ip_prefix[g_deny_count] = parts;
+                g_deny_count++;
+            }
+            tok = strtok_r(NULL, ", \t", &save);
+        }
+    }
+
+    if (g_allow_count > 0 || g_deny_count > 0) {
+        cccam_log(LOG_INFO, "Filtros de IP: %d permitido(s), %d bloqueado(s)",
+                  g_allow_count, g_deny_count);
+    }
+}
+
+static int ip_match(uint32_t ip, const uint32_t *list, const int *prefix, int count) {
+    for (int i = 0; i < count; i++) {
+        uint32_t mask = 0;
+        if (prefix[i] >= 1) mask |= 0xFF000000u;
+        if (prefix[i] >= 2) mask |= 0x00FF0000u;
+        if (prefix[i] >= 3) mask |= 0x0000FF00u;
+        if (prefix[i] >= 4) mask |= 0x000000FFu;
+        if ((ip & mask) == (list[i] & mask)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int server_ip_allowed(struct sockaddr_in *addr) {
+    uint32_t ip = (uint32_t)addr->sin_addr.s_addr;
+
+    if (g_deny_count > 0 && ip_match(ip, g_deny_ips, g_deny_ip_prefix, g_deny_count)) {
+        return 0;
+    }
+    if (g_allow_count > 0 && !ip_match(ip, g_allow_ips, g_allow_ip_prefix, g_allow_count)) {
+        return 0;
+    }
+    return 1;
+}
+
+// --- Proteção contra bruteforce de login ---
+
+#define LOGIN_FAIL_SLOTS 64
+static uint32_t g_fail_ip[LOGIN_FAIL_SLOTS];
+static int g_fail_count[LOGIN_FAIL_SLOTS];
+static time_t g_fail_since[LOGIN_FAIL_SLOTS];
+static time_t g_fail_blocked_until[LOGIN_FAIL_SLOTS];
+
+static void server_login_failure(struct sockaddr_in *addr) {
+    uint32_t ip = (uint32_t)addr->sin_addr.s_addr;
+    time_t now = time(NULL);
+    int slot = -1;
+
+    for (int i = 0; i < LOGIN_FAIL_SLOTS; i++) {
+        if (g_fail_ip[i] == ip) {
+            slot = i;
+            break;
+        }
+        if (g_fail_ip[i] == 0 && slot < 0) {
+            slot = i;
+        }
+    }
+    if (slot < 0) {
+        slot = (int)(ip % LOGIN_FAIL_SLOTS);
+    }
+
+    if (g_fail_ip[slot] != ip || (now - g_fail_since[slot]) > 60) {
+        g_fail_ip[slot] = ip;
+        g_fail_count[slot] = 1;
+        g_fail_since[slot] = now;
+    } else {
+        g_fail_count[slot]++;
+    }
+
+    int limit = g_config.max_login_failures > 0 ? g_config.max_login_failures : 5;
+    if (g_fail_count[slot] >= limit) {
+        g_fail_blocked_until[slot] = now + 60;
+        cccam_log(LOG_WARN, "Login: IP %s bloqueado por 60s (bruteforce)",
+                  inet_ntoa(addr->sin_addr));
+    }
+}
+
+static void server_login_success(struct sockaddr_in *addr) {
+    uint32_t ip = (uint32_t)addr->sin_addr.s_addr;
+    for (int i = 0; i < LOGIN_FAIL_SLOTS; i++) {
+        if (g_fail_ip[i] == ip) {
+            g_fail_ip[i] = 0;
+            g_fail_count[i] = 0;
+        }
+    }
+}
+
+static int server_login_blocked(struct sockaddr_in *addr) {
+    uint32_t ip = (uint32_t)addr->sin_addr.s_addr;
+    time_t now = time(NULL);
+    for (int i = 0; i < LOGIN_FAIL_SLOTS; i++) {
+        if (g_fail_ip[i] == ip && g_fail_blocked_until[i] > now) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// --- Rate limit de ECMs por cliente ---
+
+static int client_ecm_allowed(cccam_client_t *client) {
+    int limit = g_config.max_ecm_per_sec;
+    if (limit <= 0) {
+        return 1;
+    }
+
+    time_t now = time(NULL);
+    if (client->ecm_window_start == 0 || (now - client->ecm_window_start) >= 1) {
+        client->ecm_window_start = now;
+        client->ecm_window_count = 1;
+        return 1;
+    }
+
+    client->ecm_window_count++;
+    if (client->ecm_window_count > limit) {
+        return 0;
+    }
+    return 1;
+}
+
+// Handler para sinais (CTRL+C, SIGHUP recarrega chaves, SIGUSR1 roda o log)
 static void cccam_signal_handler(int sig) {
     if (sig == SIGHUP) {
         g_reload_requested = 1;
+        return;
+    }
+    if (sig == SIGUSR1) {
+        g_rotate_requested = 1;
         return;
     }
     cccam_log(LOG_INFO, "Recebido sinal de interrupção. A encerrar...");
@@ -66,7 +249,11 @@ int cccam3_init(cccam_config_t *config) {
     signal(SIGINT, cccam_signal_handler);
     signal(SIGTERM, cccam_signal_handler);
     signal(SIGHUP, cccam_signal_handler);
+    signal(SIGUSR1, cccam_signal_handler);
     signal(SIGPIPE, SIG_IGN);
+
+    // Filtros de IP
+    server_load_ip_lists();
 
     // Aplicar limite de ligações do balanceador
     cccam_load_balancer_set_max_connections(g_config.max_clients > 0 ? g_config.max_clients : CCCAM3_MAX_CLIENTS);
@@ -354,6 +541,13 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
         return 0;
     }
 
+    // Proteção contra bruteforce
+    if (server_login_blocked(&client->addr)) {
+        cccam_log(LOG_WARN, "Login de %s rejeitado (bloqueio temporário)",
+                  inet_ntoa(client->addr.sin_addr));
+        return -1;
+    }
+
     if (!payload || payload_len < 16 + 1 + 1 + 4) {
         cccam_log(LOG_WARN, "Login com payload inválido (%zu bytes)", payload_len);
         return -1;
@@ -391,14 +585,17 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
             // Registo automático: cria o utilizador e persiste no ficheiro
             if (cccam_user_manager_auto_register(login.username, login.password, &user) != 0) {
                 cccam_log(LOG_WARN, "Autenticação falhada para '%s' (auto-registo recusado)", login.username);
+                server_login_failure(&client->addr);
                 return -1;
             }
             cccam_log(LOG_INFO, "Cliente '%s' registado automaticamente", login.username);
         } else {
             cccam_log(LOG_WARN, "Autenticação falhada para '%s'", login.username);
+            server_login_failure(&client->addr);
             return -1;
         }
     }
+    server_login_success(&client->addr);
 
     uint8_t handshake_resp[16 + 12 + 16 + 16] = {0};
     // O estado do handshake é global: proteger a sequência completa
@@ -469,6 +666,13 @@ static int handle_client_ecm(cccam_client_t *client, const void *payload, size_t
     if (!client->is_authenticated) {
         cccam_log(LOG_WARN, "ECM de cliente não autenticado (ID %u)", client->client_id);
         return -1;
+    }
+
+    // Rate limit por cliente (anti-flood)
+    if (!client_ecm_allowed(client)) {
+        cccam_log(LOG_WARN, "ECM de %s excede o limite (%d/s) - pedido ignorado",
+                  client->username, g_config.max_ecm_per_sec);
+        return 0;
     }
 
     cccam_ecm_request_t request;
@@ -631,6 +835,22 @@ int cccam3_run(void) {
             cccam_emu_reload();
         }
 
+        // SIGUSR1: rodar o ficheiro de log
+        if (g_rotate_requested) {
+            g_rotate_requested = 0;
+            cccam_log(LOG_INFO, "SIGUSR1 recebido: a rodar o log");
+            cccam_log_rotate();
+        }
+
+        // Clientes marcados para desligar (kick pela API REST)
+        for (int i = 0; i < CCCAM3_CLIENT_SLOTS; i++) {
+            cccam_client_t *kclient = cccam_client_get_by_index(i);
+            if (kclient && kclient->to_kick) {
+                cccam_log(LOG_INFO, "Cliente %u desligado (pedido pela API)", kclient->client_id);
+                server_destroy_client(kclient);
+            }
+        }
+
         if (FD_ISSET(g_server_fd, &read_fds)) {
             struct sockaddr_in client_addr;
             socklen_t addr_len = sizeof(client_addr);
@@ -638,6 +858,13 @@ int cccam3_run(void) {
 
             if (client_fd < 0) {
                 cccam_log(LOG_ERROR, "Falha ao aceitar cliente: %s", strerror(errno));
+                continue;
+            }
+
+            if (!server_ip_allowed(&client_addr)) {
+                cccam_log(LOG_WARN, "Ligação de %s rejeitada (filtro de IP)",
+                          inet_ntoa(client_addr.sin_addr));
+                close(client_fd);
                 continue;
             }
 
@@ -669,6 +896,10 @@ int cccam3_run(void) {
 
             if (client_fd < 0) {
                 cccam_log(LOG_ERROR, "Newcamd: Falha ao aceitar cliente: %s", strerror(errno));
+            } else if (!server_ip_allowed(&client_addr)) {
+                cccam_log(LOG_WARN, "Newcamd: Ligação de %s rejeitada (filtro de IP)",
+                          inet_ntoa(client_addr.sin_addr));
+                close(client_fd);
             } else if (!cccam_load_balancer_allow_connection()) {
                 cccam_log(LOG_WARN, "Newcamd: Ligação de %s rejeitada (limite atingido)",
                           inet_ntoa(client_addr.sin_addr));
@@ -886,12 +1117,60 @@ static int run_self_tests(void) {
     return 1;
 }
 
+// --- Daemonização (-d) ---
+
+static void server_daemonize(void) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        cccam_log(LOG_ERROR, "Falha no fork: %s", strerror(errno));
+        exit(1);
+    }
+    if (pid > 0) {
+        _exit(0); // pai termina
+    }
+
+    if (setsid() < 0) {
+        cccam_log(LOG_ERROR, "Falha no setsid: %s", strerror(errno));
+        exit(1);
+    }
+
+    pid = fork();
+    if (pid < 0) {
+        exit(1);
+    }
+    if (pid > 0) {
+        _exit(0);
+    }
+
+    chdir("/");
+
+    int devnull = open("/dev/null", O_RDWR);
+    if (devnull >= 0) {
+        dup2(devnull, STDIN_FILENO);
+        dup2(devnull, STDOUT_FILENO);
+        dup2(devnull, STDERR_FILENO);
+        if (devnull > 2) {
+            close(devnull);
+        }
+    }
+
+    // Pidfile
+    if (g_config.pid_file[0] != '\0') {
+        FILE *fp = fopen(g_config.pid_file, "w");
+        if (fp) {
+            fprintf(fp, "%d\n", (int)getpid());
+            fclose(fp);
+        }
+    }
+}
+
 // Função main
 int main(int argc, char *argv[]) {
     char *config_file = "conf/cccam3.conf";
+    int daemon_mode = 0;
     int opt;
 
-    while ((opt = getopt(argc, argv, "c:htv")) != -1) {
+    while ((opt = getopt(argc, argv, "c:htvd")) != -1) {
         switch (opt) {
             case 'c':
                 config_file = optarg;
@@ -900,6 +1179,7 @@ int main(int argc, char *argv[]) {
                 printf("CCcam3 %s\n", CCCAM3_VERSION);
                 printf("Uso: %s [opções]\n", argv[0]);
                 printf("  -c <file>  Ficheiro de configuração\n");
+                printf("  -d         Correr em background (daemon)\n");
                 printf("  -h         Mostrar esta ajuda\n");
                 printf("  -t         Executar testes automáticos\n");
                 printf("  -v         Mostrar versão\n");
@@ -910,6 +1190,9 @@ int main(int argc, char *argv[]) {
             case 'v':
                 printf("CCcam3 versão %s\n", CCCAM3_VERSION);
                 return 0;
+            case 'd':
+                daemon_mode = 1;
+                break;
             default:
                 fprintf(stderr, "Uso: %s -c <config_file>\n", argv[0]);
                 return 1;
@@ -922,7 +1205,19 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    cccam_log_init(config.log_file, config.log_level);
+    if (daemon_mode) {
+        g_config = config;
+        cccam_log_init(config.log_file, config.log_level);
+        cccam_log(LOG_INFO, "A iniciar em modo daemon...");
+        server_daemonize();
+    } else {
+        cccam_log_init(config.log_file, config.log_level);
+    }
+
+    if (config.log_max_mb > 0) {
+        cccam_log_set_max_size((long)config.log_max_mb * 1024 * 1024);
+    }
+
     cccam_print_config(&config);
 
     if (cccam3_init(&config) != 0) {
@@ -932,6 +1227,11 @@ int main(int argc, char *argv[]) {
 
     int result = cccam3_run();
     cccam3_cleanup();
+
+    if (config.pid_file[0] != '\0') {
+        unlink(config.pid_file);
+    }
+
     cccam_log_close();
 
     return result;

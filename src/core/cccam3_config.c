@@ -72,6 +72,14 @@ static void parse_key_value(char *line, cccam_config_t *config, const char *sect
             strncpy(config->server_name, value, sizeof(config->server_name) - 1);
         } else if (strcmp(key, "max_clients") == 0) {
             config->max_clients = atoi(value);
+        } else if (strcmp(key, "max_ecm_per_sec") == 0) {
+            config->max_ecm_per_sec = atoi(value);
+        } else if (strcmp(key, "allow_ips") == 0) {
+            strncpy(config->allow_ips, value, sizeof(config->allow_ips) - 1);
+        } else if (strcmp(key, "deny_ips") == 0) {
+            strncpy(config->deny_ips, value, sizeof(config->deny_ips) - 1);
+        } else if (strcmp(key, "pid_file") == 0) {
+            strncpy(config->pid_file, value, sizeof(config->pid_file) - 1);
         }
     } else if (strcmp(section, "logging") == 0) {
         if (strcmp(key, "level") == 0 || strcmp(key, "log_level") == 0) {
@@ -80,6 +88,8 @@ static void parse_key_value(char *line, cccam_config_t *config, const char *sect
             strncpy(config->log_file, value, sizeof(config->log_file) - 1);
         } else if (strcmp(key, "enabled") == 0) {
             config->enable_logging = parse_bool(value);
+        } else if (strcmp(key, "max_size_mb") == 0) {
+            config->log_max_mb = atoi(value);
         }
     } else if (strcmp(section, "cache") == 0) {
         if (strcmp(key, "enabled") == 0 || strcmp(key, "cache_enabled") == 0) {
@@ -90,6 +100,8 @@ static void parse_key_value(char *line, cccam_config_t *config, const char *sect
     } else if (strcmp(section, "security") == 0) {
         if (strcmp(key, "allowed_crypt_modes") == 0) {
             config->allowed_crypt_modes = (uint32_t)strtoul(value, NULL, 16);
+        } else if (strcmp(key, "max_login_failures") == 0) {
+            config->max_login_failures = atoi(value);
         }
     } else if (strcmp(section, "hop_control") == 0) {
         if (strcmp(key, "max_hops") == 0) {

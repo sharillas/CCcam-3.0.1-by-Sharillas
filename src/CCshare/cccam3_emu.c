@@ -314,7 +314,50 @@ void cccam_emu_cleanup(void) {
 }
 
 int cccam_emu_get_key_count(void) {
-    return g_emu_key_count;
+    return __atomic_load_n(&g_emu_key_count, __ATOMIC_RELAXED);
+}
+
+void cccam_emu_stats(int *total, int *biss, int *viaccess, int *cryptoworks,
+                     int *powervu, int *nagra, int *irdeto) {
+    int t = 0, b = 0, v = 0, c = 0, p = 0, n = 0, i = 0;
+
+    pthread_mutex_lock(&g_emu_mutex);
+    cccam_emu_key_t *current = g_emu_keys;
+    while (current) {
+        t++;
+        switch (current->type) {
+            case 'F':
+            case 'T':
+                // BISS vs Viaccess: decidir pelo provider
+                if ((current->provider >> 16) == 0x2600) b++;
+                else v++;
+                break;
+            case 'W':
+                c++;
+                break;
+            case 'P':
+                p++;
+                break;
+            case 'N':
+                n++;
+                break;
+            case 'I':
+                i++;
+                break;
+            default:
+                break;
+        }
+        current = current->next;
+    }
+    pthread_mutex_unlock(&g_emu_mutex);
+
+    if (total) *total = t;
+    if (biss) *biss = b;
+    if (viaccess) *viaccess = v;
+    if (cryptoworks) *cryptoworks = c;
+    if (powervu) *powervu = p;
+    if (nagra) *nagra = n;
+    if (irdeto) *irdeto = i;
 }
 
 void cccam_emu_add_runtime_key(char type, uint32_t provider, const char *key_name,

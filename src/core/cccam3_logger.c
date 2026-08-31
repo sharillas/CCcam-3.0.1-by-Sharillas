@@ -4,6 +4,7 @@
 #include <time.h>
 #include <string.h>
 #include <pthread.h>
+#include <sys/stat.h>
 
 static int g_log_level = LOG_INFO;
 static FILE *g_log_file = NULL;
@@ -13,15 +14,42 @@ static const char *log_levels[] = {
 };
 #define LOG_LEVEL_COUNT ((int)(sizeof(log_levels) / sizeof(log_levels[0])))
 
+static char g_log_path[256] = "";
+static long g_log_max_bytes = 0;
+static long g_log_write_count = 0;
+
 int cccam_log_init(const char *log_file, int level) {
     g_log_level = level;
+    g_log_path[0] = '\0';
     if (log_file && log_file[0] != '\0') {
+        strncpy(g_log_path, log_file, sizeof(g_log_path) - 1);
         g_log_file = fopen(log_file, "a");
         if (!g_log_file) {
             return -1;
         }
     }
     return 0;
+}
+
+// Define o tamanho máximo do ficheiro de log (bytes; 0 = sem rotação)
+void cccam_log_set_max_size(long max_bytes) {
+    g_log_max_bytes = max_bytes > 0 ? max_bytes : 0;
+    if (g_log_max_bytes > 0) {
+        cccam_log(LOG_INFO, "Rotação de log ativada (%ld MB)", g_log_max_bytes / (1024 * 1024));
+    }
+}
+
+// Rotação: log -> log.1 (fecha e reabre)
+void cccam_log_rotate(void) {
+    pthread_mutex_lock(&g_log_mutex);
+    if (g_log_file && g_log_path[0] != '\0') {
+        fclose(g_log_file);
+        char old_path[280];
+        snprintf(old_path, sizeof(old_path), "%s.1", g_log_path);
+        rename(g_log_path, old_path);
+        g_log_file = fopen(g_log_path, "a");
+    }
+    pthread_mutex_unlock(&g_log_mutex);
 }
 
 void cccam_log_close(void) {
@@ -70,6 +98,16 @@ void cccam_log(int level, const char *format, ...) {
         fprintf(g_log_file, "\n");
         fflush(g_log_file);
         va_end(args_copy);
+
+        // Verifica o tamanho periodicamente (a cada 100 escritas)
+        if (g_log_max_bytes > 0 && (++g_log_write_count % 100) == 0) {
+            struct stat st;
+            if (stat(g_log_path, &st) == 0 && st.st_size > g_log_max_bytes) {
+                pthread_mutex_unlock(&g_log_mutex);
+                cccam_log_rotate();
+                pthread_mutex_lock(&g_log_mutex);
+            }
+        }
     }
 
     pthread_mutex_unlock(&g_log_mutex);

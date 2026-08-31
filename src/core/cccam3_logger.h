@@ -25,4 +25,10 @@ int cccam_log_init(const char *log_file, int level);
 void cccam_log_close(void);
 void cccam_log(int level, const char *format, ...);
 
+// Rotação do ficheiro de log (bytes; 0 = desativada)
+void cccam_log_set_max_size(long max_bytes);
+
+// Força a rotação (log -> log.1)
+void cccam_log_rotate(void);
+
 #endif // CCCAM3_LOGGER_H

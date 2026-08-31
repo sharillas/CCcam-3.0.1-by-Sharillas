@@ -30,6 +30,9 @@ typedef struct {
     int is_authenticated;
     int hop_count;
     int is_newcamd;
+    int to_kick;               // Marca para desligar (definido pela API REST)
+    time_t ecm_window_start;   // Rate limit de ECMs por cliente
+    int ecm_window_count;
     uint8_t node_id[8];
     struct sockaddr_in addr;
     cccam_crypto_ctx_t crypto;
@@ -109,11 +112,17 @@ typedef struct {
     int listen_port;
     char server_name[64];
     int max_clients;
+    int max_ecm_per_sec;         // Rate limit por cliente (0 = ilimitado)
+    int max_login_failures;      // Falhas de login por IP antes de bloquear
+    char allow_ips[256];         // Lista de IPs permitidos (vazio = todos)
+    char deny_ips[256];          // Lista de IPs bloqueados
     int enable_cache;
     int cache_timeout;
     int enable_logging;
     char log_file[256];
     int log_level;
+    int log_max_mb;              // Rotação do log (0 = desativada)
+    char pid_file[128];          // Pidfile do daemon (-d)
     int rest_api_enabled;
     int rest_api_port;
     char rest_api_user[64];      // Autenticação Basic (vazio = desativada)

@@ -32,6 +32,10 @@ int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
 // Número de chaves carregadas
 int cccam_emu_get_key_count(void);
 
+// Estatísticas por sistema (para a API REST / web)
+void cccam_emu_stats(int *total, int *biss, int *viaccess, int *cryptoworks,
+                     int *powervu, int *nagra, int *irdeto);
+
 // Adiciona/atualiza uma chave em runtime (usado pelo processamento de EMMs).
 // Se persist == 1, acrescenta a linha ao SoftCam.Key.
 void cccam_emu_add_runtime_key(char type, uint32_t provider, const char *key_name,

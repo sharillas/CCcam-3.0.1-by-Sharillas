@@ -866,6 +866,27 @@ int cccam_card_manager_load_from_config(const char *config_file) {
     return 0;
 }
 
+int cccam_card_manager_reload(void) {
+    // Fecha e liberta os leitores atuais
+    cccam_reader_t *current = g_readers;
+    while (current) {
+        cccam_reader_t *next = current->next;
+        if (current->type == READER_TYPE_REMOTE && current->remote_fd >= 0) {
+            close(current->remote_fd);
+        }
+        pthread_mutex_destroy(&current->lock);
+        free(current);
+        current = next;
+    }
+    g_readers = NULL;
+    g_reader_count = 0;
+    g_next_reader_id = 1;
+
+    int rc = cccam_card_manager_load_from_config(g_readers_file);
+    cccam_log(LOG_INFO, "CCshare: Leitores recarregados (%d)", g_reader_count);
+    return rc;
+}
+
 // Debug - imprime estado dos leitores
 void cccam_card_manager_debug_print(void) {
     cccam_reader_t *current = g_readers;

@@ -8,6 +8,8 @@
 #include "cccam3_hop_control.h"
 #include "cccam3_client.h"
 #include "cccam3_dvb.h"
+#include "cccam3_user_manager.h"
+#include "cccam3_emu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -273,6 +275,93 @@ static void json_all_stats(char *buffer, size_t size) {
     );
 }
 
+// --- Endpoints de gestão ---
+
+// Extrai o valor de um parâmetro da query string (path?param=value)
+static int get_query_param(const char *path, const char *param, char *out, size_t out_size) {
+    char query[256];
+    snprintf(query, sizeof(query), "?%s=", param);
+    const char *start = strstr(path, query);
+    if (!start) {
+        return -1;
+    }
+    start += strlen(query);
+    size_t len = strcspn(start, "& \t");
+    if (len == 0 || len >= out_size) {
+        return -1;
+    }
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return 0;
+}
+
+static void json_clients(char *buffer, size_t size) {
+    size_t used = 0;
+    used += (size_t)snprintf(buffer + used, size - used,
+        "\"clients\": {\n"
+        "    \"count\": %d,\n"
+        "    \"list\": [\n", cccam_client_get_count());
+
+    int first = 1;
+    for (int i = 0; i < CCCAM3_CLIENT_SLOTS; i++) {
+        cccam_client_t *client = cccam_client_get_by_index(i);
+        if (!client) continue;
+
+        if (used + 256 > size) break;
+
+        used += (size_t)snprintf(buffer + used, size - used,
+            "%s      { \"id\": %u, \"user\": \"%s\", \"ip\": \"%s\", "
+            "\"newcamd\": %d, \"authenticated\": %d, \"connected_at\": %ld }",
+            first ? "" : ",\n",
+            client->client_id,
+            client->username[0] != '\0' ? client->username : "-",
+            inet_ntoa(client->addr.sin_addr),
+            client->is_newcamd,
+            client->is_authenticated,
+            (long)client->connected_at);
+        first = 0;
+    }
+    snprintf(buffer + used, size - used, "\n    ]\n  }");
+}
+
+static void json_users(char *buffer, size_t size) {
+    size_t used = 0;
+    int count = cccam_user_manager_get_count();
+    used += (size_t)snprintf(buffer + used, size - used,
+        "\"users\": {\n"
+        "    \"count\": %d,\n"
+        "    \"list\": [\n", count);
+
+    for (int i = 0; i < count; i++) {
+        cccam_user_t *user = cccam_user_manager_get_by_index(i);
+        if (!user) continue;
+        if (used + 256 > size) break;
+        used += (size_t)snprintf(buffer + used, size - used,
+            "%s      { \"name\": \"%s\", \"level\": %d, \"max_hops\": %d, "
+            "\"enabled\": %d, \"logins\": %u, \"ecm\": %u, \"ecm_ok\": %u }",
+            i > 0 ? ",\n" : "",
+            user->username, (int)user->level, user->max_hops, user->enabled,
+            user->login_count, user->ecm_requests, user->ecm_success);
+    }
+    snprintf(buffer + used, size - used, "\n    ]\n  }");
+}
+
+static void json_emu_keys(char *buffer, size_t size) {
+    int total, biss, via, cw, pvu, nagra, ird;
+    cccam_emu_stats(&total, &biss, &via, &cw, &pvu, &nagra, &ird);
+    snprintf(buffer, size,
+        "\"emu\": {\n"
+        "    \"total\": %d,\n"
+        "    \"biss\": %d,\n"
+        "    \"viaccess\": %d,\n"
+        "    \"cryptoworks\": %d,\n"
+        "    \"powervu\": %d,\n"
+        "    \"nagra\": %d,\n"
+        "    \"irdeto\": %d\n"
+        "  }",
+        total, biss, via, cw, pvu, nagra, ird);
+}
+
 // --- Handler de Requisições HTTP ---
 
 static void handle_request(int client_fd, char *request, size_t request_len) {
@@ -325,6 +414,61 @@ static void handle_request(int client_fd, char *request, size_t request_len) {
     // --- Rotas ---
     if (strcmp(path, "/") == 0 || strcmp(path, "/status") == 0) {
         json_server_status(json, sizeof(json));
+        send_json_response(client_fd, json);
+    } else if (strncmp(path, "/clients/kick", 13) == 0) {
+        char id_str[16];
+        if (get_query_param(path, "id", id_str, sizeof(id_str)) == 0) {
+            uint32_t id = (uint32_t)atoi(id_str);
+            cccam_client_t *c = cccam_client_find_by_id(id);
+            if (c) {
+                c->to_kick = 1;
+                send_json_response(client_fd, "{\"result\": \"ok\", \"kick\": true}");
+            } else {
+                send_json_response(client_fd, "{\"result\": \"not_found\"}");
+            }
+        } else {
+            send_json_response(client_fd, "{\"result\": \"missing_id\"}");
+        }
+    } else if (strcmp(path, "/clients") == 0) {
+        json_clients(json, sizeof(json));
+        send_json_response(client_fd, json);
+    } else if (strncmp(path, "/users/set", 10) == 0) {
+        char name[64], value[16];
+        if (get_query_param(path, "name", name, sizeof(name)) == 0) {
+            cccam_user_t *user = cccam_user_manager_get_user(name);
+            if (!user) {
+                send_json_response(client_fd, "{\"result\": \"not_found\"}");
+            } else if (get_query_param(path, "enabled", value, sizeof(value)) == 0) {
+                cccam_user_manager_set_enabled(name, (uint8_t)(atoi(value) != 0));
+                send_json_response(client_fd, "{\"result\": \"ok\"}");
+            } else if (get_query_param(path, "max_hops", value, sizeof(value)) == 0) {
+                cccam_user_manager_set_max_hops(name, (uint8_t)atoi(value));
+                send_json_response(client_fd, "{\"result\": \"ok\"}");
+            } else if (get_query_param(path, "level", value, sizeof(value)) == 0) {
+                cccam_user_manager_set_level(name, (cccam_user_level_t)atoi(value));
+                send_json_response(client_fd, "{\"result\": \"ok\"}");
+            } else {
+                send_json_response(client_fd, "{\"result\": \"missing_param\"}");
+            }
+        } else {
+            send_json_response(client_fd, "{\"result\": \"missing_name\"}");
+        }
+    } else if (strcmp(path, "/users") == 0) {
+        json_users(json, sizeof(json));
+        send_json_response(client_fd, json);
+    } else if (strcmp(path, "/reload/keys") == 0) {
+        int rc = cccam_emu_reload();
+        snprintf(json, sizeof(json), "{\"result\": %s}",
+                 rc == 0 ? "\"ok\"" : "\"error\"");
+        send_json_response(client_fd, json);
+    } else if (strcmp(path, "/reload/users") == 0) {
+        cccam_user_manager_reload();
+        send_json_response(client_fd, "{\"result\": \"ok\"}");
+    } else if (strcmp(path, "/reload/readers") == 0) {
+        cccam_card_manager_reload();
+        send_json_response(client_fd, "{\"result\": \"ok\"}");
+    } else if (strcmp(path, "/emu/keys") == 0) {
+        json_emu_keys(json, sizeof(json));
         send_json_response(client_fd, json);
     } else if (strcmp(path, g_web_path) == 0 ||
                (strcmp(g_web_path, "/web") == 0 && strcmp(path, "/web/") == 0)) {
