@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "cccam3.h"
 #include "cccam3_rest_api.h"
 #include "cccam3_web_interface.h"
@@ -807,7 +808,15 @@ started:
             if (client_fd < 0) {
                 continue;
             }
-            
+
+            // Timeouts no socket do cliente: uma ligação parada/scanner não
+            // pode bloquear o painel (o loop trata um cliente de cada vez)
+            struct timeval sock_tv;
+            sock_tv.tv_sec = 10;
+            sock_tv.tv_usec = 0;
+            setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &sock_tv, sizeof(sock_tv));
+            setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &sock_tv, sizeof(sock_tv));
+
             // Lê o pedido: cabeçalhos até \r\n\r\n e corpo (Content-Length)
             char buffer[REST_API_MAX_BUFFER];
             size_t received = 0;
