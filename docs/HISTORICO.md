@@ -437,3 +437,31 @@ Distribuição para boxes enigma2 (OpenPLi/OpenATV/OpenViX) via opkg:
   `SoftCam.Key` de exemplo.
 - Versão do `control` e do nome do `.ipk` agora derivados da tag da
   release (fim do 3.0.1 hardcoded no workflow).
+
+---
+
+## 19. Auditoria de Produção — Thread Safety e Robustez (2026)
+
+### 19.1 Bugs reais corrigidos
+
+| # | Bug | Correção |
+|---|---|---|
+| 1 | **Data races no processamento de ECM**: com a DVBAPI por ligação (uma thread por descodificador), a cache (lista ligada), o card manager (fd/crypto/estado dos leitores) e o hop control passaram a ser mutados por várias threads em simultâneo | Mutex global de ECM (`cccam_ecm_lock/unlock`) a serializar cache + leitores + hops; `cccam_ecm_clean_expired_cache()` no loop principal; ordem de locks documentada (ecm → handshake) |
+| 2 | **Race no handshake**: o estado global (chave de sessão/modo) era partilhado entre o login de clientes (loop principal) e o login de leitores remotos (threads de ECM) | `cccam_handshake_lock/unlock` à volta das sequências completas em `handle_client_login` e `remote_ensure_login` |
+| 3 | **Double-close + threads órfãs na DVBAPI**: o cleanup fechava os sockets dos clientes e as threads detached fechavam-nos de novo; threads dentro do processamento de ECM podiam sobreviver ao cleanup da cache | Cleanup usa `shutdown()` (nunca `close()`); cada thread fecha o seu fd uma vez sob mutex; condvar espera pelo fim de todas as threads antes do cleanup da cache/leitores |
+| 4 | **Logger multi-thread**: linhas intercaladas/UB no va_list | Mutex no `cccam_log` (va_copy antes do consumo) |
+| 5 | **Contadores lidos pela API REST** enquanto outras threads escrevem (cache, ECM, utilizadores, clientes, leitores) | `__atomic` em todos os contadores + cargas atómicas nos getters |
+| 6 | **SCardTransmit fixo em T=0**: cartões T=1 falhavam no leitor local | Usa o protocolo negociado no `SCardConnect` (T=0 ou T=1) |
+| 7 | Interface web: write único podia truncar a página | Loop de escrita parcial com EINTR |
+| 8 | `install.sh --from-source`: primeira tentativa de download era um URL inválido (raw + ../archive) | Removida; usa-se diretamente o tarball do GitHub |
+
+### 19.2 Limitações conhecidas (produção)
+
+- O mutex global de ECM serializa pedidos: um leitor remoto lento (connect
+  até 5 s, I/O até 10 s) pode atrasar outros ECMs. É limitado e aceitável
+  para servidores pequenos/médios; per-reader locking fica para futuro.
+- O loop principal continua single-thread: um cliente lento pode bloquear
+  até 10 s (SO_RCVTIMEO). Pre-existente.
+- Sem rate-limiting no login (bruteforce). Mitigação: passwords fortes e
+  `[rest_api] user/password` ativado.
+- Em modo DEBUG o log inclui CWs — usar INFO em produção.
