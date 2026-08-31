@@ -90,6 +90,12 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
                                const uint8_t *ecm_data, uint16_t ecm_len,
                                uint8_t *cw, uint8_t *hop, uint32_t *reader_id);
 
+// Envia um EMM aos leitores remotos compatíveis (manutenção de direitos
+// dos cartões reais que estão "do outro lado" do share).
+// Chamar com o mutex de ECM adquirido (ver cccam_ecm_forward_emm).
+int cccam_card_manager_send_emm(uint16_t caid, uint16_t provid,
+                                const uint8_t *emm_data, uint16_t emm_len);
+
 // Seleciona o melhor leitor para um determinado CAID/SID
 cccam_reader_t *cccam_card_manager_select_reader(uint16_t caid, uint16_t provid, uint16_t sid);
 

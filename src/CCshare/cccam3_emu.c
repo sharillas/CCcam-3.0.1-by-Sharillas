@@ -9,6 +9,9 @@
 int cccam_emu_viaccess_ecm(const uint8_t *ecm, uint16_t ecm_len, uint8_t *dw);
 int cccam_emu_biss_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
                        uint16_t ecm_len, uint8_t *dw);
+int cccam_emu_cryptoworks_ecm(uint32_t caid, uint8_t *ecm, uint8_t *cw);
+int cccam_emu_powervu_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
+                          uint16_t ecm_len, uint8_t *dw);
 
 // --- Estrutura de Chaves ---
 
@@ -16,9 +19,10 @@ int cccam_emu_biss_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
 #define CCCAM_EMU_MAX_KEY_DATA 320  // chaves T do Viaccess têm 300 bytes
 
 typedef struct cccam_emu_key {
-    char type;                  // 'F', 'I' ou 'T'
-    uint32_t provider;          // identificador de 24 bits
+    char type;                  // 'F', 'I', 'T', 'W' ou 'P'
+    uint32_t provider;          // identificador (24 ou 32 bits)
     uint8_t key_index;          // índice da chave (0-255)
+    uint32_t date;              // data de expiração YYYYMMDD (0 = sem data)
     uint8_t data[CCCAM_EMU_MAX_KEY_DATA];
     uint8_t data_len;
     struct cccam_emu_key *next;
@@ -63,7 +67,7 @@ static int hex_to_bin(const char *hex, uint8_t *out, size_t max_len) {
 }
 
 static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
-                        const uint8_t *data, uint8_t data_len) {
+                        const uint8_t *data, uint8_t data_len, uint32_t date) {
     if (g_emu_key_count >= CCCAM_EMU_MAX_KEYS) {
         cccam_log(LOG_WARN, "EMU: Limite de chaves atingido (%d)", CCCAM_EMU_MAX_KEYS);
         return;
@@ -76,6 +80,7 @@ static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
             current->key_index == key_index) {
             memcpy(current->data, data, data_len);
             current->data_len = data_len;
+            current->date = date;
             return;
         }
         current = current->next;
@@ -89,9 +94,27 @@ static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
     key->key_index = key_index;
     memcpy(key->data, data, data_len);
     key->data_len = data_len;
+    key->date = date;
     key->next = g_emu_keys;
     g_emu_keys = key;
     g_emu_key_count++;
+}
+
+// Data atual em formato YYYYMMDD
+static uint32_t emu_current_date(void) {
+    time_t now = time(NULL);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
+    return (uint32_t)((tm_info.tm_year + 1900) * 10000 +
+                      (tm_info.tm_mon + 1) * 100 + tm_info.tm_mday);
+}
+
+// Devolve 0 se a chave tiver expirado (data no passado)
+static int emu_key_valid(const cccam_emu_key_t *key) {
+    if (key->date == 0) {
+        return 1;
+    }
+    return emu_current_date() <= key->date;
 }
 
 int cccam_emu_find_key(char type, uint32_t provider, const char *key_name,
@@ -104,7 +127,7 @@ int cccam_emu_find_key(char type, uint32_t provider, const char *key_name,
     cccam_emu_key_t *current = g_emu_keys;
     while (current) {
         if (current->type == type && current->provider == provider &&
-            current->key_index == index) {
+            current->key_index == index && emu_key_valid(current)) {
             if (key_out && key_out_size >= current->data_len) {
                 memcpy(key_out, current->data, current->data_len);
                 return current->data_len;
@@ -120,8 +143,10 @@ int cccam_emu_find_key(char type, uint32_t provider, const char *key_name,
 // Formato por linha:
 //   F <provider 6 hex> <keyindex hex> <keydata hex> [; comentário]
 //   I <provider 6 hex> <keyindex hex> <keydata hex>
-//   T <provider 6 hex> <keyindex hex> <keydata hex> <timestamp hex>
-//   F <provider 8 hex> 00 <keydata hex>   (formato antigo, índice embutido)
+//   T <provider 6 hex> <keyindex hex> <keydata hex> <data hex>
+//   W <provider 6 hex> <keyindex hex> <keydata hex>   (Cryptoworks)
+//   P <provider 8 hex> <keyindex hex> <keydata hex>   (PowerVU, chave 7 bytes)
+//   F <provider 8 hex> <data 8 hex> <keydata hex>     (BISS com data)
 
 static void emu_parse_line(char *line) {
     char *p = line;
@@ -135,7 +160,7 @@ static void emu_parse_line(char *line) {
     if (*p == '\0') return;
 
     char type = (char)toupper((unsigned char)*p);
-    if (type != 'F' && type != 'I' && type != 'T') return;
+    if (type != 'F' && type != 'I' && type != 'T' && type != 'W' && type != 'P') return;
     p++;
 
     char *tok_provider = strtok(p, " \t");
@@ -150,7 +175,7 @@ static void emu_parse_line(char *line) {
     }
 
     size_t idx_len = strlen(tok_index);
-    if (idx_len == 0 || idx_len > 2) return;
+    if (idx_len == 0 || idx_len > 8) return;
     for (size_t i = 0; i < idx_len; i++) {
         if (!isxdigit((unsigned char)tok_index[i])) return;
     }
@@ -160,19 +185,34 @@ static void emu_parse_line(char *line) {
     if (data_len <= 0) return;
 
     uint32_t provider = (uint32_t)strtoul(tok_provider, NULL, 16);
-    uint8_t key_index = (uint8_t)strtoul(tok_index, NULL, 16);
+    uint32_t date = 0;
+
+    // Linhas T: token extra com a data de expiração (hex YYYYMMDD)
+    if (type == 'T') {
+        char *tok_date = strtok(NULL, " \t");
+        if (tok_date) {
+            date = (uint32_t)strtoul(tok_date, NULL, 16);
+        }
+    }
 
     if (prov_len == 8) {
-        // Provider de 32 bits (ex.: formato BISS "2600XXXX").
-        // Se o índice é 00, regista também sob o identificador de 24 bits
-        // com o índice embutido (formato antigo de chaves Viaccess).
-        emu_add_key(type, provider, key_index, data, (uint8_t)data_len);
-        if (key_index == 0 && (provider & 0xFF) != 0) {
-            emu_add_key(type, provider >> 8, (uint8_t)(provider & 0xFF),
-                        data, (uint8_t)data_len);
+        // Provider de 32 bits.
+        if (idx_len == 8) {
+            // Formato BISS com data: F <provider8> <YYYYMMDD> <key>
+            date = (uint32_t)strtoul(tok_index, NULL, 16);
+            emu_add_key(type, provider, 0, data, (uint8_t)data_len, date);
+        } else {
+            uint8_t key_index = (uint8_t)strtoul(tok_index, NULL, 16);
+            emu_add_key(type, provider, key_index, data, (uint8_t)data_len, date);
+            // Formato antigo (índice embutido no provider de 8 hex)
+            if (key_index == 0 && (provider & 0xFF) != 0) {
+                emu_add_key(type, provider >> 8, (uint8_t)(provider & 0xFF),
+                            data, (uint8_t)data_len, date);
+            }
         }
     } else {
-        emu_add_key(type, provider, key_index, data, (uint8_t)data_len);
+        uint8_t key_index = (uint8_t)strtoul(tok_index, NULL, 16);
+        emu_add_key(type, provider, key_index, data, (uint8_t)data_len, date);
     }
 }
 
@@ -209,6 +249,34 @@ int cccam_emu_init(void) {
     return 0;
 }
 
+int cccam_emu_reload(void) {
+    cccam_emu_key_t *old = g_emu_keys;
+    int old_count = g_emu_key_count;
+
+    // Recarrega num armazenamento novo; só troca se o ficheiro for válido
+    g_emu_keys = NULL;
+    g_emu_key_count = 0;
+
+    if (emu_load_key_file(g_emu_key_file) == 0) {
+        // Liberta as chaves antigas
+        cccam_emu_key_t *current = old;
+        while (current) {
+            cccam_emu_key_t *next = current->next;
+            free(current);
+            current = next;
+        }
+        (void)old_count;
+        cccam_log(LOG_INFO, "EMU: SoftCam.Key recarregado (%d chaves)", g_emu_key_count);
+        return 0;
+    }
+
+    // Falha ao carregar: mantém as chaves antigas
+    g_emu_keys = old;
+    g_emu_key_count = old_count;
+    cccam_log(LOG_WARN, "EMU: Falha ao recarregar SoftCam.Key (chaves antigas mantidas)");
+    return -1;
+}
+
 void cccam_emu_cleanup(void) {
     emu_free_keys();
     g_emu_initialized = 0;
@@ -230,7 +298,12 @@ static int is_biss_caid(uint16_t caid) {
 }
 
 static int is_cryptoworks_caid(uint16_t caid) {
-    return caid == 0x0D05 || caid == 0x0D03 || caid == 0x0D0C;
+    return caid == 0x0D00 || caid == 0x0D02 || caid == 0x0D03 ||
+           caid == 0x0D05 || caid == 0x0D0C;
+}
+
+static int is_powervu_caid(uint16_t caid) {
+    return caid == 0x0E00;
 }
 
 int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
@@ -246,8 +319,13 @@ int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
         return cccam_emu_biss_ecm(caid, sid, ecm, ecm_len, cw);
     }
     if (is_cryptoworks_caid(caid)) {
-        cccam_log(LOG_DEBUG, "EMU: Cryptoworks ainda não suportado (CAID %04X)", caid);
-        return CCCAM_EMU_NOT_SUPPORTED;
+        uint8_t ecm_copy[CCCAM_ECM_MAX_SIZE + 4];
+        if (ecm_len > sizeof(ecm_copy)) return CCCAM_EMU_CORRUPT_DATA;
+        memcpy(ecm_copy, ecm, ecm_len);
+        return cccam_emu_cryptoworks_ecm(caid, ecm_copy, cw);
+    }
+    if (is_powervu_caid(caid)) {
+        return cccam_emu_powervu_ecm(caid, sid, ecm, ecm_len, cw);
     }
 
     cccam_log(LOG_DEBUG, "EMU: Sistema CAID %04X não suportado", caid);

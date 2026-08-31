@@ -56,6 +56,12 @@ void cccam_ecm_unlock(void);
 // Limpa entradas expiradas da cache (com o mutex de ECM adquirido)
 int cccam_ecm_clean_expired_cache(void);
 
+// Reencaminha um EMM para os leitores remotos compatíveis (com o mutex
+// de ECM adquirido). Usado pelas fontes de EMM (clientes, DVBAPI, Newcamd,
+// leitor DVB interno).
+int cccam_ecm_forward_emm(uint16_t caid, uint16_t provid,
+                          const uint8_t *emm_data, uint16_t emm_len);
+
 // Envia CW para o cliente (usa o contexto de criptografia da sessão)
 int cccam_ecm_send_cw(int client_fd, const cccam_crypto_ctx_t *crypto,
                       const cccam_ecm_response_t *response);

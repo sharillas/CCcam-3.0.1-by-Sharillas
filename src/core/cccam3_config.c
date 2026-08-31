@@ -170,7 +170,11 @@ static void parse_key_value(char *line, cccam_config_t *config, const char *sect
             else if (strcmp(value, "dvb-s2") == 0) config->dvb_delivery_system = 2;
             else if (strcmp(value, "dvb-c") == 0) config->dvb_delivery_system = 3;
             else if (strcmp(value, "dvb-c2") == 0) config->dvb_delivery_system = 4;
+            else if (strcmp(value, "dvb-t") == 0) config->dvb_delivery_system = 5;
+            else if (strcmp(value, "dvb-t2") == 0) config->dvb_delivery_system = 6;
             else config->dvb_delivery_system = 0;
+        } else if (strcmp(key, "bandwidth") == 0) {
+            config->dvb_bandwidth = atoi(value);
         } else if (strcmp(key, "modulation") == 0) {
             if (strcmp(value, "qpsk") == 0) config->dvb_modulation = 1;
             else if (strcmp(value, "psk_8") == 0) config->dvb_modulation = 2;

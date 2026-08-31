@@ -48,6 +48,12 @@ int cccam_protocol_build_ecm(uint8_t *buffer, size_t *buf_len,
                              const uint8_t *ecm_data, uint16_t ecm_len,
                              const cccam_crypto_ctx_t *crypto);
 
+// Mensagem EMM (payload: caid 2 + provid 2 + dados EMM)
+int cccam_protocol_build_emm(uint8_t *buffer, size_t *buf_len,
+                             uint16_t caid, uint16_t provid,
+                             const uint8_t *emm_data, uint16_t emm_len,
+                             const cccam_crypto_ctx_t *crypto);
+
 int cccam_protocol_build_cw(uint8_t *buffer, size_t *buf_len,
                             const cccam_cw_msg_t *cw_msg,
                             const cccam_crypto_ctx_t *crypto);

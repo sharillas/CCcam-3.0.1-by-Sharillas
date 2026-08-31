@@ -890,6 +890,17 @@ void cccam_emu_aes_decrypt_block(uint8_t *data, const uint8_t *key)
 	AES_decrypt(data, data, &aes_key);
 }
 
+void cccam_emu_des_ecb3_decrypt(uint8_t *data, const uint8_t *key)
+{
+	uint32_t ks1[32], ks2[32];
+
+	cccam_emu_des_set_key(key, ks1);
+	cccam_emu_des_set_key(key + 8, ks2);
+	cccam_emu_des(data, ks1, 0);
+	cccam_emu_des(data, ks2, 1);
+	cccam_emu_des(data, ks1, 0);
+}
+
 int cccam_emu_is_valid_dcw(const uint8_t *cw)
 {
 	return cw[3] == (uint8_t)(cw[0] + cw[1] + cw[2]);

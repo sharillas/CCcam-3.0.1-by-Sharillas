@@ -404,6 +404,12 @@ int cccam_newcamd_process(int fd, cccam_newcamd_session_t *session,
             session->last_keepalive = time(NULL);
             return ncd_send_message(fd, session, msg.msg_id, NCD_MSG_KEEPALIVE_ACK,
                                     NULL, 0, 0);
+        case 0xEB:
+            // EMM do cliente Newcamd: reencaminhar para os leitores remotos
+            if (session->state == 1 && msg.data_len >= 3) {
+                cccam_ecm_forward_emm(g_ncd_caid, 0, msg.data, msg.data_len);
+            }
+            return ncd_send_message(fd, session, msg.msg_id, 0xEB, NULL, 0, 0);
         default:
             cccam_log(LOG_DEBUG, "Newcamd: Comando 0x%02X ignorado", msg.cmd);
             return 0;

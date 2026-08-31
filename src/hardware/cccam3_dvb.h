@@ -12,7 +12,9 @@ typedef enum {
     CCCAM3_DVB_DELIVERY_S = 1,
     CCCAM3_DVB_DELIVERY_S2 = 2,
     CCCAM3_DVB_DELIVERY_C = 3,
-    CCCAM3_DVB_DELIVERY_C2 = 4
+    CCCAM3_DVB_DELIVERY_C2 = 4,
+    CCCAM3_DVB_DELIVERY_T = 5,
+    CCCAM3_DVB_DELIVERY_T2 = 6
 } cccam3_dvb_delivery_t;
 
 typedef enum {
@@ -62,6 +64,7 @@ typedef struct {
     int inversion;
     int polarity;
     int service_id;
+    int bandwidth;          // DVB-T/T2: 6, 7 ou 8 MHz (0 = 8 MHz)
 } cccam_dvb_config_t;
 
 typedef struct {

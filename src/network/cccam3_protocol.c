@@ -394,6 +394,54 @@ int cccam_protocol_build_ecm(uint8_t *buffer, size_t *buf_len,
     return 0;
 }
 
+int cccam_protocol_build_emm(uint8_t *buffer, size_t *buf_len,
+                             uint16_t caid, uint16_t provid,
+                             const uint8_t *emm_data, uint16_t emm_len,
+                             const cccam_crypto_ctx_t *crypto) {
+    if (!buffer || !buf_len || !emm_data) {
+        return -1;
+    }
+
+    uint8_t crypt_mode = crypto ? crypto->mode : CCCAM_CRYPT_MODE_NONE;
+    size_t total_len = CCCAM3_HEADER_SIZE + 4 + emm_len;
+    if (crypt_mode == CCCAM_CRYPT_MODE_AES_GCM) {
+        total_len += GCM_TAG_LEN;
+    }
+
+    if (*buf_len < total_len || total_len > CCCAM3_BUFFER_SIZE) {
+        return -1;
+    }
+
+    uint8_t *ptr = buffer;
+    write_be32(ptr, CCCAM_MSG_EMM);
+    ptr += 4;
+    write_be32(ptr, (uint32_t)total_len);
+    ptr += 4;
+    *ptr++ = 0;
+    *ptr++ = crypt_mode;
+    write_be16(ptr, 0);
+    ptr += 2;
+
+    write_be16(ptr, caid);
+    ptr += 2;
+    write_be16(ptr, provid);
+    ptr += 2;
+    memcpy(ptr, emm_data, emm_len);
+
+    if (crypto && crypt_mode != CCCAM_CRYPT_MODE_NONE) {
+        size_t payload_len = total_len - CCCAM3_HEADER_SIZE;
+        if (cccam_protocol_encrypt((cccam_crypto_ctx_t *)crypto,
+                                   buffer + CCCAM3_HEADER_SIZE, &payload_len,
+                                   total_len - CCCAM3_HEADER_SIZE,
+                                   CCCAM_MSG_EMM) != 0) {
+            return -1;
+        }
+    }
+
+    *buf_len = total_len;
+    return 0;
+}
+
 int cccam_protocol_build_cw(uint8_t *buffer, size_t *buf_len,
                             const cccam_cw_msg_t *cw_msg,
                             const cccam_crypto_ctx_t *crypto) {

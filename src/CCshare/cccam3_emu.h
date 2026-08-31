@@ -9,6 +9,9 @@
 // Inicializa o motor de emulação (carrega o ficheiro de chaves)
 int cccam_emu_init(void);
 
+// Recarrega o ficheiro SoftCam.Key (chamável com o servidor em execução)
+int cccam_emu_reload(void);
+
 // Limpa o motor de emulação
 void cccam_emu_cleanup(void);
 

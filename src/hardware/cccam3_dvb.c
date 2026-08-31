@@ -95,11 +95,14 @@ static fe_delivery_system_t dvb_delivery_system(void) {
         case CCCAM3_DVB_DELIVERY_S2: return SYS_DVBS2;
         case CCCAM3_DVB_DELIVERY_C: return SYS_DVBC_ANNEX_A;
         case CCCAM3_DVB_DELIVERY_C2: return SYS_DVBC2;
+        case CCCAM3_DVB_DELIVERY_T: return SYS_DVBT;
+        case CCCAM3_DVB_DELIVERY_T2: return SYS_DVBT2;
         default: {
             struct dvb_frontend_info info;
             if (ioctl(g_frontend_fd, FE_GET_INFO, &info) == 0) {
                 if (info.type == FE_QAM) return SYS_DVBC_ANNEX_A;
                 if (info.type == FE_QPSK) return SYS_DVBS2;
+                if (info.type == FE_OFDM) return SYS_DVBT2;
             }
             return SYS_DVBS2;
         }
@@ -295,6 +298,16 @@ static int dvb_tune(void) {
         i++;
     }
 
+    if (sys == SYS_DVBT || sys == SYS_DVBT2) {
+        // Largura de banda do canal (6/7/8 MHz; 0 = 8 MHz)
+        uint32_t bw = 8000000;
+        if (g_config.bandwidth == 6) bw = 6000000;
+        else if (g_config.bandwidth == 7) bw = 7000000;
+        props[i].cmd = DTV_BANDWIDTH_HZ;
+        props[i].u.data = bw;
+        i++;
+    }
+
     props[i].cmd = DTV_TUNE;
     i++;
 
@@ -479,6 +492,63 @@ static void dvb_handle_ecm(const uint8_t *sec, int len) {
     }
 }
 
+// --- EMM (manutenção de direitos dos cartões do share) ---
+
+static int g_emm_demux_fd = -1;
+static uint16_t g_emm_pid = 0;
+
+// Lê o CAT (PID 0x0001), encontra o EMM PID do CAID sintonizado e filtra-o
+static int dvb_setup_emm(void) {
+    uint8_t buf[4096];
+
+    if (g_emm_demux_fd < 0) return -1;
+    if (dvb_set_section_filter(g_emm_demux_fd, 0x0001, 0x01, 0xFF) != 0) return -1;
+
+    int n = dvb_read_section(g_emm_demux_fd, buf, sizeof(buf), 1500);
+    if (n <= 0 || buf[0] != 0x01) return -1;
+
+    int section_length = ((buf[1] & 0x0F) << 8) | buf[2];
+    if (section_length + 3 > n) return -1;
+    int end = 3 + section_length - 4;
+
+    for (int off = 8; off + 2 <= end; ) {
+        uint8_t tag = buf[off];
+        uint8_t dlen = buf[off + 1];
+        if (off + 2 + dlen > end) break;
+
+        if (tag == 0x09 && dlen >= 4) {
+            uint16_t caid = (uint16_t)((buf[off + 2] << 8) | buf[off + 3]);
+            uint16_t pid = (uint16_t)(((buf[off + 4] & 0x1F) << 8) | buf[off + 5]);
+            if (caid == g_caid) {
+                g_emm_pid = pid;
+                break;
+            }
+        }
+        off += 2 + dlen;
+    }
+
+    if (g_emm_pid == 0) {
+        cccam_log(LOG_DEBUG, "DVB: Sem EMM PID para CAID %04X no CAT", g_caid);
+        return -1;
+    }
+
+    cccam_log(LOG_INFO, "DVB: EMM PID %04X (CAID %04X) - a encaminhar para os leitores remotos",
+              g_emm_pid, g_caid);
+    return dvb_set_section_filter(g_emm_demux_fd, g_emm_pid, 0x80, 0xF0);
+}
+
+// Reencaminha EMMs (tabelas 0x82-0x8F) para os leitores remotos
+static void dvb_handle_emm(void) {
+    uint8_t buf[4096];
+    int n = dvb_read_section(g_emm_demux_fd, buf, sizeof(buf), 100);
+    if (n <= 0) return;
+
+    if (buf[0] >= 0x82 && buf[0] <= 0x8F) {
+        cccam_ecm_forward_emm(g_caid, 0, buf, (uint16_t)n);
+        cccam_log(LOG_DEBUG, "DVB: EMM (%d bytes) encaminhado", n);
+    }
+}
+
 // --- Thread principal ---
 
 static void *dvb_thread_func(void *arg) {
@@ -500,6 +570,7 @@ static void *dvb_thread_func(void *arg) {
                 sleep(3);
                 continue;
             }
+            dvb_setup_emm();
         }
 
         int n = dvb_read_section(g_demux_fd, g_section_buf, sizeof(g_section_buf), 1000);
@@ -513,6 +584,11 @@ static void *dvb_thread_func(void *arg) {
                 cccam_log(LOG_WARN, "DVB: Sinal perdido - a ressintonizar");
                 locked = 0;
             }
+        }
+
+        // EMMs do transponder (sem bloquear o processamento de ECMs)
+        if (g_emm_pid != 0) {
+            dvb_handle_emm();
         }
     }
 
@@ -560,6 +636,14 @@ int cccam_dvb_init(cccam_dvb_config_t *config) {
         cccam_log(LOG_WARN, "DVB: Sem demux de descodificação (%s) - CWs não serão injetadas", path);
     }
 
+    // Demux extra para CAT/EMM (opcional)
+    snprintf(path, sizeof(path), "/dev/dvb/adapter%d/demux%d",
+             g_config.adapter, g_config.demux + 2);
+    g_emm_demux_fd = open(path, O_RDWR | O_NONBLOCK);
+    if (g_emm_demux_fd < 0) {
+        cccam_log(LOG_DEBUG, "DVB: Sem demux extra para EMM (%s)", path);
+    }
+
     g_running = 1;
     if (pthread_create(&g_thread, NULL, dvb_thread_func, NULL) != 0) {
         cccam_log(LOG_ERROR, "DVB: Falha ao criar thread");
@@ -582,6 +666,7 @@ void cccam_dvb_cleanup(void) {
     pthread_join(g_thread, NULL);
 
     if (g_pes_demux_fd >= 0) { close(g_pes_demux_fd); g_pes_demux_fd = -1; }
+    if (g_emm_demux_fd >= 0) { close(g_emm_demux_fd); g_emm_demux_fd = -1; }
     if (g_demux_fd >= 0) { close(g_demux_fd); g_demux_fd = -1; }
     if (g_frontend_fd >= 0) { close(g_frontend_fd); g_frontend_fd = -1; }
 

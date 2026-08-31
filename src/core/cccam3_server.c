@@ -28,11 +28,15 @@
 static int g_server_fd = -1;
 static int g_newcamd_fd = -1;
 static int g_running = 1;
+static volatile sig_atomic_t g_reload_requested = 0;
 static cccam_config_t g_config;
 
-// Handler para sinais (CTRL+C, etc.)
+// Handler para sinais (CTRL+C, SIGHUP para recarregar chaves EMU, etc.)
 static void cccam_signal_handler(int sig) {
-    (void)sig;
+    if (sig == SIGHUP) {
+        g_reload_requested = 1;
+        return;
+    }
     cccam_log(LOG_INFO, "Recebido sinal de interrupção. A encerrar...");
     g_running = 0;
 }
@@ -61,6 +65,7 @@ int cccam3_init(cccam_config_t *config) {
     // Configurar handlers de sinais
     signal(SIGINT, cccam_signal_handler);
     signal(SIGTERM, cccam_signal_handler);
+    signal(SIGHUP, cccam_signal_handler);
     signal(SIGPIPE, SIG_IGN);
 
     // Aplicar limite de ligações do balanceador
@@ -177,6 +182,7 @@ int cccam3_init(cccam_config_t *config) {
         dvb.inversion = g_config.dvb_inversion;
         dvb.polarity = g_config.dvb_polarity;
         dvb.service_id = g_config.dvb_service_id;
+        dvb.bandwidth = g_config.dvb_bandwidth;
         if (cccam_dvb_init(&dvb) != 0) {
             cccam_log(LOG_WARN, "DVB: Falha ao inicializar leitor de hardware (sem /dev/dvb?)");
         }
@@ -552,6 +558,16 @@ static void handle_client_message(cccam_client_t *client) {
         case CCCAM_MSG_ECM:
             failed = handle_client_ecm(client, payload, payload_len);
             break;
+        case CCCAM_MSG_EMM:
+            // EMM de um cliente: reencaminhar para os leitores remotos
+            if (payload_len >= 4) {
+                const uint8_t *p = (const uint8_t *)payload;
+                uint16_t emm_caid = (uint16_t)((p[0] << 8) | p[1]);
+                uint16_t emm_provid = (uint16_t)((p[2] << 8) | p[3]);
+                cccam_ecm_forward_emm(emm_caid, emm_provid, p + 4,
+                                      (uint16_t)(payload_len - 4));
+            }
+            break;
         case CCCAM_MSG_KEEPALIVE:
             cccam_client_update_keepalive(client);
             break;
@@ -606,6 +622,13 @@ int cccam3_run(void) {
                 cccam_log(LOG_ERROR, "Erro no select: %s", strerror(errno));
             }
             break;
+        }
+
+        // SIGHUP: recarregar o SoftCam.Key sem reiniciar o servidor
+        if (g_reload_requested) {
+            g_reload_requested = 0;
+            cccam_log(LOG_INFO, "SIGHUP recebido: a recarregar SoftCam.Key");
+            cccam_emu_reload();
         }
 
         if (FD_ISSET(g_server_fd, &read_fds)) {

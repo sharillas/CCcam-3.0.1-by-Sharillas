@@ -601,6 +601,68 @@ int cccam_card_manager_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
     return result;
 }
 
+// Envia um EMM aos leitores remotos compatíveis
+int cccam_card_manager_send_emm(uint16_t caid, uint16_t provid,
+                                const uint8_t *emm_data, uint16_t emm_len) {
+    cccam_reader_t *current = g_readers;
+    int sent_count = 0;
+
+    if (!emm_data || emm_len == 0) {
+        return -1;
+    }
+
+    while (current) {
+        if (current->type != READER_TYPE_REMOTE || !current->enabled) {
+            current = current->next;
+            continue;
+        }
+
+        // Filtro por CAID (0 = todos)
+        if (current->caid != 0 && current->caid != caid) {
+            current = current->next;
+            continue;
+        }
+
+        // Liga (com timeout) e autentica se necessário
+        if (current->remote_fd < 0) {
+            if (remote_connect(current) != 0) {
+                reader_mark_failure(current);
+                current = current->next;
+                continue;
+            }
+        }
+
+        if (remote_ensure_login(current) != 0) {
+            if (current->remote_fd >= 0) {
+                close(current->remote_fd);
+                current->remote_fd = -1;
+            }
+            current->remote_logged_in = 0;
+            reader_mark_failure(current);
+            current = current->next;
+            continue;
+        }
+
+        uint8_t emm_buf[CCCAM3_BUFFER_SIZE];
+        size_t emm_msg_len = sizeof(emm_buf);
+        if (cccam_protocol_build_emm(emm_buf, &emm_msg_len, caid, provid,
+                                     emm_data, emm_len, &current->crypto) != 0) {
+            current = current->next;
+            continue;
+        }
+
+        if (send(current->remote_fd, emm_buf, emm_msg_len, 0) == (ssize_t)emm_msg_len) {
+            sent_count++;
+            cccam_log(LOG_DEBUG, "CCshare: EMM enviado ao leitor remoto '%s' (CAID %04X)",
+                      current->name, caid);
+        }
+
+        current = current->next;
+    }
+
+    return sent_count;
+}
+
 // Atualiza o estado de um leitor
 int cccam_card_manager_update_state(uint32_t reader_id, cccam_reader_state_t state) {
     cccam_reader_t *reader = cccam_card_manager_find_reader(reader_id);

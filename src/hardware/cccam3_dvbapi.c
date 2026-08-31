@@ -21,11 +21,18 @@
 
 // --- Estado de um demux (canal em descodificação) ---
 typedef struct {
-    int used;
-    uint16_t sid;
     uint16_t caid;
     uint32_t provid;
     uint16_t ecm_pid;
+} dvbapi_ca_t;
+
+typedef struct {
+    int used;
+    uint16_t sid;
+    dvbapi_ca_t ca[DVBAPI_MAX_ECM_PIDS];
+    int ca_count;
+    uint16_t emm_pids[8];
+    int emm_pid_count;
     uint16_t video_pid;
     uint16_t audio_pids[8];
     int audio_pid_count;
@@ -163,8 +170,9 @@ static int dvbapi_send_descr_mode(int fd) {
     return send_all(fd, packet, sizeof(packet));
 }
 
-// Pede ao descodificador para filtrar o PID de ECM
-static int dvbapi_send_set_filter(int fd, uint16_t ecm_pid) {
+// Pede ao descodificador para filtrar um PID (secções, tabela/máscara)
+static int dvbapi_send_set_filter_ex(int fd, uint8_t filter_num, uint16_t pid,
+                                     uint8_t table, uint8_t mask) {
     uint8_t packet[4 + 1 + 1 + 1 + 2 + 16 + 16 + 16 + 4 + 4];
     size_t off = 0;
 
@@ -172,17 +180,16 @@ static int dvbapi_send_set_filter(int fd, uint16_t ecm_pid) {
     off += 4;
     packet[off++] = 0;               // adapter index
     packet[off++] = 0;               // demux index
-    packet[off++] = 0;               // filter number
+    packet[off++] = filter_num;      // filter number
 
     // dmx_sct_filter_params
-    put_be16(packet + off, ecm_pid);
+    put_be16(packet + off, pid);
     off += 2;
-    // filter: tabela 0x80/0x81 (par/ímpar)
     memset(packet + off, 0, 16);
-    packet[off] = 0x80;
+    packet[off] = table;
     off += 16;
     memset(packet + off, 0, 16);
-    packet[off] = 0xF0;
+    packet[off] = mask;
     off += 16;
     memset(packet + off, 0, 16);     // mode
     off += 16;
@@ -194,7 +201,51 @@ static int dvbapi_send_set_filter(int fd, uint16_t ecm_pid) {
     return send_all(fd, packet, off);
 }
 
+// Filtro de ECM (tabela 0x80/0x81)
+static int dvbapi_send_set_filter(int fd, uint8_t filter_num, uint16_t ecm_pid) {
+    return dvbapi_send_set_filter_ex(fd, filter_num, ecm_pid, 0x80, 0xF0);
+}
+
 // --- Parsing do CA_PMT ---
+
+// Extrai o PROVID do descritor CA consoante o sistema (como o OSCam)
+static uint32_t dvbapi_ca_provid(uint16_t caid, const uint8_t *desc, uint8_t dlen) {
+    uint32_t provid = 0;
+
+    if ((caid & 0xFF00) == 0x0500) {
+        // Viaccess: ident no offset 14 (descritor com 0x0F bytes)
+        if (dlen == 0x0F && desc[10] == 0x14) {
+            provid = ((uint32_t)desc[12] << 16) | ((uint32_t)desc[13] << 8) | desc[14];
+            provid &= 0xFFFFF0;
+        }
+    } else if ((caid & 0xFF00) == 0x1800 || (caid & 0xF000) == 0x1800) {
+        // Nagra: provider de 2 bytes no fim do descritor
+        if (dlen == 0x07) {
+            provid = ((uint32_t)desc[5] << 8) | desc[6];
+        }
+    } else if ((caid & 0xFF00) == 0x0600 || caid == 0x4AE1 || caid == 0x4ABF) {
+        // Irdeto: provider no offset 12
+        if (dlen >= 0x0F) {
+            provid = ((uint32_t)desc[10] << 8) | desc[11];
+        }
+    } else if ((caid & 0xFF00) == 0x0100) {
+        // Seca: provider de 2 bytes no offset 6
+        if (dlen >= 0x08) {
+            provid = ((uint32_t)desc[4] << 8) | desc[5];
+        }
+    } else if ((caid & 0xFF00) == 0x0D00) {
+        // Cryptoworks
+        if (dlen >= 0x07) {
+            provid = ((uint32_t)desc[5] << 16) | ((uint32_t)desc[6] << 8) | desc[7];
+        }
+    } else {
+        if (dlen >= 0x07) {
+            provid = ((uint32_t)desc[4] << 16) | ((uint32_t)desc[5] << 8) | desc[6];
+        }
+    }
+
+    return provid;
+}
 
 // O ca_pmt tem: [list_mgmt 1][program_number 2][version 1][prog_info_len 2(12 bits)]
 // seguido dos descritores do programa.
@@ -225,14 +276,13 @@ static int dvbapi_parse_capmt(const uint8_t *data, size_t len, dvbapi_demux_t *d
         uint8_t dlen = data[pos + 1];
         if (pos + 2 + dlen > end) break;
 
-        if (tag == 0x09 && dlen >= 4) {
-            // CA descriptor: caid + ecmpid
-            demux->caid = get_be16(data + pos + 2);
-            demux->ecm_pid = (uint16_t)(get_be16(data + pos + 4) & 0x1FFF);
-            if (dlen >= 6) {
-                demux->provid = ((uint32_t)data[pos + 6] << 16) |
-                                ((uint32_t)data[pos + 7] << 8) | data[pos + 8];
-            }
+        if (tag == 0x09 && dlen >= 4 && demux->ca_count < DVBAPI_MAX_ECM_PIDS) {
+            // CA descriptor: caid + ecmpid (+ provid por sistema)
+            dvbapi_ca_t *ca = &demux->ca[demux->ca_count];
+            ca->caid = get_be16(data + pos + 2);
+            ca->ecm_pid = (uint16_t)(get_be16(data + pos + 4) & 0x1FFF);
+            ca->provid = dvbapi_ca_provid(ca->caid, data + pos + 2, dlen);
+            demux->ca_count++;
         }
         pos += 2 + dlen;
     }
@@ -259,14 +309,14 @@ static int dvbapi_parse_capmt(const uint8_t *data, size_t len, dvbapi_demux_t *d
         pos += es_info_len;
     }
 
-    if (demux->ecm_pid == 0 || demux->caid == 0) {
-        cccam_log(LOG_WARN, "DVBAPI: CA_PMT sem ECM PID/CAID válidos (SID %04X)", sid);
+    if (demux->ca_count == 0) {
+        cccam_log(LOG_WARN, "DVBAPI: CA_PMT sem descritores CA válidos (SID %04X)", sid);
         return -1;
     }
 
     demux->last_ecm = time(NULL);
-    cccam_log(LOG_INFO, "DVBAPI: Canal SID %04X CAID %04X ECM PID %04X vídeo %04X",
-              demux->sid, demux->caid, demux->ecm_pid, demux->video_pid);
+    cccam_log(LOG_INFO, "DVBAPI: Canal SID %04X (%d sistema(s) CA, ECM PID %04X, vídeo %04X)",
+              demux->sid, demux->ca_count, demux->ca[0].ecm_pid, demux->video_pid);
     return 0;
 }
 
@@ -295,8 +345,13 @@ static void *dvbapi_client_thread(void *arg) {
 
             if ((opcode & 0xFFFFFF00) == DVBAPI_AOT_CA_PMT) {
                 if (dvbapi_parse_capmt(buffer, data_len, &client->demux) == 0) {
-                    // Pede o filtro de ECM e associa os PIDs
-                    dvbapi_send_set_filter(fd, client->demux.ecm_pid);
+                    // Filtros de ECM para TODOS os sistemas CA do PMT
+                    for (int i = 0; i < client->demux.ca_count; i++) {
+                        dvbapi_send_set_filter(fd, (uint8_t)i,
+                                               client->demux.ca[i].ecm_pid);
+                    }
+                    // Filtro do CAT (PID 0x0001) para os EMMs
+                    dvbapi_send_set_filter_ex(fd, 0xFE, 0x0001, 0x01, 0xFF);
                     dvbapi_send_descr_mode(fd);
                     if (client->demux.video_pid) {
                         dvbapi_send_pid(fd, client->demux.video_pid, 0);
@@ -337,32 +392,82 @@ static void *dvbapi_client_thread(void *arg) {
             // [demux 1][filter 1][len 2 (12 bits)][dados]
             uint8_t fhdr[4];
             if (recv_all(fd, fhdr, 4) != 0) break;
+            uint8_t filter_num = fhdr[1];
             uint32_t sec_len = (uint32_t)((fhdr[2] << 8 | fhdr[3]) & 0x0FFF);
             if (sec_len > sizeof(buffer) || sec_len < 3) break;
             if (recv_all(fd, buffer, sec_len) != 0) break;
 
-            // buffer = secção DVB completa (tabela 0x80/0x81)
+            // buffer = secção DVB completa
             if (!client->demux.used) continue;
 
-            cccam_ecm_request_t request;
-            memset(&request, 0, sizeof(request));
-            request.caid = client->demux.caid;
-            request.provid = (uint16_t)(client->demux.provid & 0xFFFF);
-            request.sid = client->demux.sid;
-            request.ecm_len = (uint16_t)sec_len;
-            if (request.ecm_len > CCCAM_ECM_MAX_SIZE) request.ecm_len = CCCAM_ECM_MAX_SIZE;
-            memcpy(request.ecm_data, buffer, request.ecm_len);
-            request.received_at = time(NULL);
-            request.client_id = 0;
-            request.hop = 0;
-
-            cccam_ecm_response_t response;
-            if (cccam_ecm_process(&request, &response) == 0 && response.found) {
-                dvbapi_send_descr(fd, response.cw);
-                client->demux.last_ecm = time(NULL);
-                cccam_log(LOG_DEBUG, "DVBAPI: CW enviada para SID %04X", client->demux.sid);
+            if (filter_num == 0xFE) {
+                // CAT: tabela 0x01 -> descritores CA -> EMM PIDs
+                if (buffer[0] == 0x01 && sec_len >= 8) {
+                    uint16_t cat_len = (uint16_t)(((buffer[1] & 0x0F) << 8) | buffer[2]);
+                    if (cat_len + 3 <= sec_len) {
+                        client->demux.emm_pid_count = 0;
+                        size_t p = 8;
+                        while (p + 2 <= sec_len - 4) {
+                            uint8_t tag = buffer[p];
+                            uint8_t dlen = buffer[p + 1];
+                            if (p + 2 + dlen > sec_len - 4) break;
+                            if (tag == 0x09 && dlen >= 4) {
+                                uint16_t caid = get_be16(buffer + p + 2);
+                                uint16_t emm_pid = (uint16_t)(get_be16(buffer + p + 4) & 0x1FFF);
+                                for (int i = 0; i < client->demux.ca_count; i++) {
+                                    if (client->demux.ca[i].caid == caid &&
+                                        client->demux.emm_pid_count < 8) {
+                                        client->demux.emm_pids[client->demux.emm_pid_count++] = emm_pid;
+                                        // Pede o filtro do EMM (tabelas 0x82-0x8F)
+                                        dvbapi_send_set_filter_ex(fd, (uint8_t)(0x80 + i),
+                                                                  emm_pid, 0x80, 0xF0);
+                                        break;
+                                    }
+                                }
+                            }
+                            p += 2 + dlen;
+                        }
+                        if (client->demux.emm_pid_count > 0) {
+                            cccam_log(LOG_DEBUG, "DVBAPI: %d EMM PID(s) para SID %04X",
+                                      client->demux.emm_pid_count, client->demux.sid);
+                        }
+                    }
+                }
+            } else if (filter_num >= 0x80) {
+                // EMM: reencaminhar para os leitores remotos
+                int idx = filter_num - 0x80;
+                if (idx < client->demux.ca_count) {
+                    cccam_ecm_forward_emm(client->demux.ca[idx].caid,
+                                          (uint16_t)(client->demux.ca[idx].provid & 0xFFFF),
+                                          buffer, (uint16_t)sec_len);
+                }
             } else {
-                cccam_log(LOG_DEBUG, "DVBAPI: ECM falhou para SID %04X", client->demux.sid);
+                // ECM: o número do filtro identifica o sistema CA
+                if (filter_num >= client->demux.ca_count) continue;
+                dvbapi_ca_t *ca = &client->demux.ca[filter_num];
+
+                cccam_ecm_request_t request;
+                memset(&request, 0, sizeof(request));
+                request.caid = ca->caid;
+                request.provid = (uint16_t)(ca->provid & 0xFFFF);
+                request.sid = client->demux.sid;
+                request.ecm_len = (uint16_t)sec_len;
+                if (request.ecm_len > CCCAM_ECM_MAX_SIZE) request.ecm_len = CCCAM_ECM_MAX_SIZE;
+                memcpy(request.ecm_data, buffer, request.ecm_len);
+                request.received_at = time(NULL);
+                request.client_id = 0;
+                request.hop = 0;
+
+                cccam_ecm_response_t response;
+                if (cccam_ecm_process(&request, &response) == 0 && response.found) {
+                    dvbapi_send_descr(fd, response.cw);
+                    client->demux.last_ecm = time(NULL);
+                    cccam_log(LOG_DEBUG, "DVBAPI: CW enviada para SID %04X (CAID %04X)",
+                              client->demux.sid, ca->caid);
+                } else {
+                    cccam_log(LOG_DEBUG, "DVBAPI: ECM falhou para SID %04X (CAID %04X)",
+                              client->demux.sid, ca->caid);
+                }
             }
         } else {
             // Comando desconhecido: ignorar o payload se houver

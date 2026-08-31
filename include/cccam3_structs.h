@@ -149,6 +149,7 @@ typedef struct {
     int dvb_inversion;
     int dvb_polarity;
     int dvb_service_id;
+    int dvb_bandwidth;           // DVB-T/T2: 6, 7 ou 8 MHz (0 = 8 MHz)
 } cccam_config_t;
 
 #endif // CCCAM3_STRUCTS_H

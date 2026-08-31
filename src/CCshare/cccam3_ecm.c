@@ -42,6 +42,15 @@ int cccam_ecm_clean_expired_cache(void) {
     return removed;
 }
 
+int cccam_ecm_forward_emm(uint16_t caid, uint16_t provid,
+                          const uint8_t *emm_data, uint16_t emm_len) {
+    int sent;
+    cccam_ecm_lock();
+    sent = cccam_card_manager_send_emm(caid, provid, emm_data, emm_len);
+    cccam_ecm_unlock();
+    return sent;
+}
+
 // --- Funções Auxiliares Internas ---
 
 // Converte CAID/SID para string legível (para logs)
