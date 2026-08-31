@@ -19,6 +19,8 @@ static pthread_mutex_t g_hop_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // --- Funções Auxiliares Internas ---
 
+static int cccam_hop_control_clean_expired_locked(void);
+
 // Verifica se duas entradas são iguais
 static int hop_match(cccam_hop_entry_t *entry, uint16_t caid, uint16_t provid, 
                      uint16_t sid, uint32_t client_id) {
