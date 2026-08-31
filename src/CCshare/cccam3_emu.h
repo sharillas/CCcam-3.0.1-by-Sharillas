@@ -24,6 +24,16 @@ void cccam_emu_set_key_file(const char *path);
 int cccam_emu_find_key(char type, uint32_t provider, const char *key_name,
                        uint8_t key_index, uint8_t *key_out, size_t key_out_size);
 
+// Procura uma chave pelo nome (ex.: UA PowerVU, 8 hex).
+// Devolve o tamanho da chave ou 0; found_provider recebe o provider guardado.
+int cccam_emu_find_key_name(char type, const char *name, uint8_t *key_out,
+                            size_t key_out_size, uint32_t *found_provider);
+
+// Procura uma chave por tipo + 16 bits baixos do provider + índice
+// (usado pelas chaves ECM do PowerVU: P <grupo><sid> 00/01)
+int cccam_emu_find_key_masked(char type, uint16_t provider16, uint8_t key_index,
+                              uint8_t *key_out, size_t key_out_size);
+
 // Tenta resolver um ECM com o motor de emulação.
 // Devolve 0 se a CW foi obtida (16 bytes em cw), -1 caso contrário.
 int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,

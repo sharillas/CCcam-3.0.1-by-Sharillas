@@ -15,6 +15,7 @@ int cccam_emu_biss_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
 int cccam_emu_cryptoworks_ecm(uint32_t caid, uint8_t *ecm, uint8_t *cw);
 int cccam_emu_powervu_ecm(uint16_t caid, uint16_t sid, const uint8_t *ecm,
                           uint16_t ecm_len, uint8_t *dw);
+int cccam_emu_powervu_emm(uint16_t caid, const uint8_t *emm, uint16_t emm_len);
 int cccam_emu_nagravision_ecm(uint16_t caid, uint8_t *ecm, uint8_t *dw);
 int cccam_emu_irdeto_ecm(uint16_t caid, uint8_t *ecm, uint8_t *dw);
 int cccam_emu_irdeto_emm(uint16_t caid, const uint8_t *oemm, uint16_t emm_len);
@@ -28,6 +29,7 @@ typedef struct cccam_emu_key {
     char type;                  // 'F', 'I', 'T', 'W' ou 'P'
     uint32_t provider;          // identificador (24 ou 32 bits)
     uint8_t key_index;          // índice da chave (0-255)
+    char name[12];              // nome alternativo (ex.: UA PowerVU, 8 hex)
     uint32_t date;              // data de expiração YYYYMMDD (0 = sem data)
     uint8_t data[CCCAM_EMU_MAX_KEY_DATA];
     uint8_t data_len;
@@ -77,7 +79,8 @@ static int hex_to_bin(const char *hex, uint8_t *out, size_t max_len) {
 }
 
 static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
-                        const uint8_t *data, uint8_t data_len, uint32_t date) {
+                        const uint8_t *data, uint8_t data_len, uint32_t date,
+                        const char *name) {
     if (g_emu_key_count >= CCCAM_EMU_MAX_KEYS) {
         cccam_log(LOG_WARN, "EMU: Limite de chaves atingido (%d)", CCCAM_EMU_MAX_KEYS);
         return;
@@ -85,14 +88,22 @@ static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
 
     pthread_mutex_lock(&g_emu_mutex);
 
-    // Substitui chave idêntica existente
+    // Substitui chave idêntica existente (por nome ou por índice)
     cccam_emu_key_t *current = g_emu_keys;
     while (current) {
-        if (current->type == type && current->provider == provider &&
-            current->key_index == key_index) {
+        int match = (current->type == type && current->provider == provider &&
+                     current->key_index == key_index);
+        if (name && name[0] != '\0' && current->name[0] != '\0') {
+            match = (current->type == type && current->provider == provider &&
+                     strcmp(current->name, name) == 0);
+        }
+        if (match) {
             memcpy(current->data, data, data_len);
             current->data_len = data_len;
             current->date = date;
+            if (name) {
+                snprintf(current->name, sizeof(current->name), "%s", name);
+            }
             pthread_mutex_unlock(&g_emu_mutex);
             return;
         }
@@ -108,6 +119,9 @@ static void emu_add_key(char type, uint32_t provider, uint8_t key_index,
     key->type = type;
     key->provider = provider;
     key->key_index = key_index;
+    if (name) {
+        snprintf(key->name, sizeof(key->name), "%s", name);
+    }
     memcpy(key->data, data, data_len);
     key->data_len = data_len;
     key->date = date;
@@ -224,19 +238,22 @@ static void emu_parse_line(char *line) {
         if (idx_len == 8) {
             // Formato BISS com data: F <provider8> <YYYYMMDD> <key>
             date = (uint32_t)strtoul(tok_index, NULL, 16);
-            emu_add_key(type, provider, 0, data, (uint8_t)data_len, date);
+            emu_add_key(type, provider, 0, data, (uint8_t)data_len, date, NULL);
+        } else if (idx_len >= 3 && type == 'P') {
+            // PowerVU EMM key: P <provider8> <UA 8 hex> <key 7 bytes>
+            emu_add_key(type, provider, 0, data, (uint8_t)data_len, date, tok_index);
         } else {
             uint8_t key_index = (uint8_t)strtoul(tok_index, NULL, 16);
-            emu_add_key(type, provider, key_index, data, (uint8_t)data_len, date);
+            emu_add_key(type, provider, key_index, data, (uint8_t)data_len, date, NULL);
             // Formato antigo (índice embutido no provider de 8 hex)
             if (key_index == 0 && (provider & 0xFF) != 0) {
                 emu_add_key(type, provider >> 8, (uint8_t)(provider & 0xFF),
-                            data, (uint8_t)data_len, date);
+                            data, (uint8_t)data_len, date, NULL);
             }
         }
     } else {
         uint8_t key_index = (uint8_t)strtoul(tok_index, NULL, 16);
-        emu_add_key(type, provider, key_index, data, (uint8_t)data_len, date);
+        emu_add_key(type, provider, key_index, data, (uint8_t)data_len, date, NULL);
     }
 }
 
@@ -363,11 +380,18 @@ void cccam_emu_stats(int *total, int *biss, int *viaccess, int *cryptoworks,
 void cccam_emu_add_runtime_key(char type, uint32_t provider, const char *key_name,
                                const uint8_t *data, uint8_t data_len, int persist) {
     uint8_t index = 0;
+    const char *name = NULL;
+
     if (key_name && key_name[0] != '\0') {
-        index = (uint8_t)strtoul(key_name, NULL, 16);
+        size_t name_len = strlen(key_name);
+        if (name_len > 2) {
+            name = key_name;        // nome arbitrário (ex.: UA de 8 hex)
+        } else {
+            index = (uint8_t)strtoul(key_name, NULL, 16);
+        }
     }
 
-    emu_add_key(type, provider, index, data, data_len, 0);
+    emu_add_key(type, provider, index, data, data_len, 0, name);
 
     if (!persist) {
         return;
@@ -376,15 +400,69 @@ void cccam_emu_add_runtime_key(char type, uint32_t provider, const char *key_nam
     // Persiste no ficheiro (anexa)
     FILE *fp = fopen(g_emu_key_file, "a");
     if (fp) {
-        fprintf(fp, "%c %06X %s ", type, provider, key_name ? key_name : "00");
+        fprintf(fp, "%c %08X %s ", type, provider, key_name ? key_name : "00");
         for (int i = 0; i < data_len; i++) {
             fprintf(fp, "%02X", data[i]);
         }
         fprintf(fp, "\n");
         fclose(fp);
-        cccam_log(LOG_DEBUG, "EMU: Chave %c %06X %s persistida no SoftCam.Key",
+        cccam_log(LOG_DEBUG, "EMU: Chave %c %08X %s persistida no SoftCam.Key",
                   type, provider, key_name ? key_name : "00");
     }
+}
+
+// Procura uma chave pelo nome (ex.: UA PowerVU). Devolve o tamanho ou 0.
+// Se found_provider != NULL, recebe o provider armazenado.
+int cccam_emu_find_key_name(char type, const char *name, uint8_t *key_out,
+                            size_t key_out_size, uint32_t *found_provider) {
+    if (!name || name[0] == '\0') {
+        return 0;
+    }
+
+    pthread_mutex_lock(&g_emu_mutex);
+
+    cccam_emu_key_t *current = g_emu_keys;
+    while (current) {
+        if (current->type == type && current->name[0] != '\0' &&
+            strcmp(current->name, name) == 0 && emu_key_valid(current)) {
+            if (key_out && key_out_size >= current->data_len) {
+                memcpy(key_out, current->data, current->data_len);
+                if (found_provider) *found_provider = current->provider;
+                pthread_mutex_unlock(&g_emu_mutex);
+                return current->data_len;
+            }
+            if (found_provider) *found_provider = current->provider;
+            pthread_mutex_unlock(&g_emu_mutex);
+            return 0;
+        }
+        current = current->next;
+    }
+
+    pthread_mutex_unlock(&g_emu_mutex);
+    return 0;
+}
+
+int cccam_emu_find_key_masked(char type, uint16_t provider16, uint8_t key_index,
+                              uint8_t *key_out, size_t key_out_size) {
+    pthread_mutex_lock(&g_emu_mutex);
+
+    cccam_emu_key_t *current = g_emu_keys;
+    while (current) {
+        if (current->type == type && current->key_index == key_index &&
+            (current->provider & 0xFFFF) == provider16 && emu_key_valid(current)) {
+            if (key_out && key_out_size >= current->data_len) {
+                memcpy(key_out, current->data, current->data_len);
+                pthread_mutex_unlock(&g_emu_mutex);
+                return current->data_len;
+            }
+            pthread_mutex_unlock(&g_emu_mutex);
+            return 0;
+        }
+        current = current->next;
+    }
+
+    pthread_mutex_unlock(&g_emu_mutex);
+    return 0;
 }
 
 int cccam_emu_process_emm(uint16_t caid, const uint8_t *emm, uint16_t emm_len) {
@@ -395,6 +473,11 @@ int cccam_emu_process_emm(uint16_t caid, const uint8_t *emm, uint16_t emm_len) {
     // Irdeto: EMM atualiza chaves (OP e PMK)
     if ((caid & 0xFF00) == 0x0600 || caid == 0x4AE1 || caid == 0x4ABF) {
         return cccam_emu_irdeto_emm(caid, emm, emm_len);
+    }
+
+    // PowerVU: EMM atualiza as chaves 'P' dos grupos
+    if (caid == 0x0E00) {
+        return cccam_emu_powervu_emm(caid, emm, emm_len);
     }
 
     return -1;
