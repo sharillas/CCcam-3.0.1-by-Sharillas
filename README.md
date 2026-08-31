@@ -31,13 +31,11 @@
 | Encriptação AES-GCM | ✅ | Tráfego autenticado (confidencialidade + integridade) |
 | Criptografia por sessão | ✅ | Chave única por cliente (sem estado global) |
 | Handshake seguro | ✅ | PBKDF2-HMAC-SHA256 + AES-GCM (modo moderno), SHA1 (legado) |
-| EMU real (SoftCam.Key) | ✅ | Viaccess (Via 1/2.6/3 + HD), BISS, Cryptoworks, PowerVU |
-| Leitor local de cartões | ✅ | Smartcards reais via PC/SC (Seca, Conax) |
-| Leitores remotos reais | ✅ | TCP com sessão encriptada, timeout e backoff |
-| EMM (AU) | ✅ | EMMs reencaminhados aos leitores remotos (clientes, Newcamd, DVBAPI, tuner) |
-| Reload de chaves | ✅ | SIGHUP recarrega o SoftCam.Key sem reiniciar |
-| DVB-API (ca_pmt OSCam) | ✅ | Multi-CA com fallback e PROVID por sistema |
-| Cache de CWs | ✅ | LRU verdadeiro com timeout configurável |
+| EMU real (SoftCam.Key) | ✅ | Viaccess, BISS, Cryptoworks, PowerVU, Nagra2, Irdeto2 |
+| EMM (AU) | ✅ | Reencaminha para leitores remotos + atualiza chaves EMU (Irdeto/PowerVU) |
+| Hardening | ✅ | Rate limit de ECMs, anti-bruteforce, filtros de IP |
+| Operação | ✅ | Daemon (-d), rotação de log, reload por SIGHUP/REST |
+| Gestão REST | ✅ | Clientes (kick), utilizadores, reloads, chaves EMU |
 | STAPI | ✅ | libstapi.so do STLinux (dlopen) |
 | Leitor DVB direto | ✅ | S/S2/C/C2: PAT/SDT/PMT + descrambler |
 | Logging configurável | ✅ | Múltiplos níveis (ERROR, WARN, INFO, DEBUG, TRACE) |

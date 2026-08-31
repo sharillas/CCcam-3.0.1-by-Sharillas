@@ -524,3 +524,54 @@ dos cartões vivos):
   já derivadas no SoftCam.Key, como nos pacotes da comunidade) e sem
   descodificação de áudio multiplex (cw_ex).
 - EMM: um único EMM PID por canal no tuner interno (primeiro do CAT).
+
+---
+
+## 21. Hardening, Gestão e Mais Sistemas EMU (2026)
+
+### 21.1 EMU: Nagra2 e Irdeto2
+
+- **Nagra2** (CAID 0x17xx/0x18xx): RSA (OpenSSL BN) + IDEA (portado do
+  cscrypt do OSCam) + DES-EDE2-CBC. Chaves 'N' (ex.: `N 410101 M1 ...`).
+- **Irdeto2** (0x06xx, 4AE1): ECM completo + **EMM AU** — extrai chaves
+  OP/PMK dos EMMs e persiste-as no SoftCam.Key automaticamente.
+- **PowerVU EMM AU**: chaves 'P' de grupo derivadas dos EMMs do stream
+  (unmask + nano parsing), com persistência. As chaves EMM usam o UA
+  como nome: `P <grupo> <UA 8 hex> <key 7 bytes>`.
+
+### 21.2 Hardening de produção
+
+| Funcionalidade | Config | Notas |
+|---|---|---|
+| Rate limit de ECMs por cliente | `[global] max_ecm_per_sec` (0 = off) | Pedidos acima do limite são ignorados |
+| Anti-bruteforce de login | `[security] max_login_failures` | 5 falhas/IP → bloqueio de 60 s |
+| Filtros de IP | `[global] allow_ips / deny_ips` | Prefixos aceites ("1.2.3.") |
+| Rotação de log | `[logging] max_size_mb` | + `SIGUSR1` para rodar na hora |
+| Daemon | `-d` | Pidfile em `[global] pid_file` |
+
+### 21.3 Gestão por REST (todas com autenticação Basic)
+
+| Rota | Ação |
+|---|---|
+| `GET /clients` | Lista de clientes ligados (user, IP, ECMs) |
+| `GET /clients/kick?id=N` | Desliga um cliente |
+| `GET /users` | Lista de utilizadores com estatísticas |
+| `GET /users/set?name=X&enabled=/max_hops=/level=` | Edita utilizadores |
+| `GET /reload/keys` `/reload/users` `/reload/readers` | Recarregar em runtime |
+| `GET /emu/keys` | Contagem de chaves por sistema |
+
+- Painel web: contador de chaves EMU + botão "Reload Keys".
+- Workflow: release criada automaticamente ao fazer push de uma tag `v*`.
+
+### 21.4 Escalabilidade: locks por leitor
+
+O mutex global de ECM foi removido: a cache, o hop control e o
+armazenamento de chaves têm mutexes próprios e **cada leitor tem o seu
+mutex** — leitores diferentes processam ECMs em paralelo (fim do
+bloqueio por leitores remotos lentos).
+
+### 21.5 Limitações
+
+- PowerVU: áudio multiplex (cw_ex) não suportado — só vídeo CSA.
+- Newcamd sem proteção anti-bruteforce de login (só filtros de IP e a
+  proteção do protocolo próprio).
