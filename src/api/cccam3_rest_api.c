@@ -353,7 +353,7 @@ static void json_clients(char *buffer, size_t size) {
         used += (size_t)snprintf(buffer + used, size - used,
             "%s      { \"id\": %u, \"user\": \"%s\", \"ip\": \"%s\", "
             "\"newcamd\": %d, \"authenticated\": %d, \"connected_at\": %ld, "
-            "\"ecm_total\": %u, \"sid\": %u, \"caid\": %u, "
+            "\"ecm_total\": %u, \"ecm_ok\": %u, \"ecm_fail\": %u, \"sid\": %u, \"caid\": %u, "
             "\"channel\": \"%s\", \"provider\": \"%s\" }",
             first ? "" : ",\n",
             client->client_id,
@@ -363,6 +363,8 @@ static void json_clients(char *buffer, size_t size) {
             client->is_authenticated,
             (long)client->connected_at,
             client->ecm_total,
+            client->ecm_ok,
+            client->ecm_total - client->ecm_ok,
             client->cur_sid,
             client->cur_caid,
             channel ? channel : "—",

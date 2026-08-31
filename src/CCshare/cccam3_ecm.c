@@ -74,6 +74,15 @@ void cccam_ecm_cleanup(void) {
     cccam_log(LOG_INFO, "CCshare: ECM handler limpo");
 }
 
+// Marca um ECM com sucesso no contador do cliente (painel web)
+static void ecm_client_ok(uint32_t client_id) {
+    if (client_id == 0) return;
+    cccam_client_t *c = cccam_client_find_by_id(client_id);
+    if (c) {
+        __atomic_add_fetch(&c->ecm_ok, 1, __ATOMIC_RELAXED);
+    }
+}
+
 int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *response) {
     if (!request || !response) {
         cccam_log(LOG_ERROR, "CCshare: ECM process - ponteiros inválidos");
@@ -89,13 +98,14 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
     // A cache e os leitores têm mutexes próprios (paralelismo entre ECMs)
     __atomic_add_fetch(&g_ecm_total_requests, 1, __ATOMIC_RELAXED);
 
-    // Regista o canal atual do cliente (para o painel web)
+    // Regista o canal atual do cliente e conta o pedido (para o painel web)
     if (request->client_id != 0) {
         cccam_client_t *c = cccam_client_find_by_id(request->client_id);
         if (c) {
             c->cur_caid = request->caid;
             c->cur_sid = request->sid;
             c->cur_channel_at = time(NULL);
+            __atomic_add_fetch(&c->ecm_total, 1, __ATOMIC_RELAXED);
         }
     }
     
@@ -128,6 +138,7 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
         response->found = 1;
         response->hop = served_hop;
         __atomic_add_fetch(&g_ecm_cache_hits, 1, __ATOMIC_RELAXED);
+        ecm_client_ok(request->client_id);
         cccam_log(LOG_DEBUG, "CCshare: ECM %s - CACHE HIT (hop %d)", info, served_hop);
         return 0;
     }
@@ -158,6 +169,7 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
         response->found = 1;
         response->hop = served_hop;
         __atomic_add_fetch(&g_ecm_reader_success, 1, __ATOMIC_RELAXED);
+        ecm_client_ok(request->client_id);
         
         // Guarda na cache com o hop da origem (0 = usar timeout configurado)
         cccam_cache_add(request->caid, request->provid, request->sid, 

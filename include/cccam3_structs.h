@@ -34,6 +34,7 @@ typedef struct {
     time_t ecm_window_start;   // Rate limit de ECMs por cliente
     int ecm_window_count;
     uint32_t ecm_total;        // Total de ECMs pedidos (para o painel)
+    uint32_t ecm_ok;           // ECMs com sucesso (CW devolvida)
     uint16_t cur_caid;         // CAID do canal que está a ver agora
     uint16_t cur_sid;          // SID do canal que está a ver agora
     time_t cur_channel_at;     // Quando pediu o último ECM
