@@ -625,8 +625,12 @@ static void handle_request(int client_fd, char *request, size_t request_len, siz
         header_start = end + 2;
     }
 
-    // Autenticação Basic (se configurada)
-    if (g_auth_user[0] != '\0' && g_auth_password[0] != '\0') {
+    // Autenticação Basic (se configurada). A própria página do painel fica
+    // livre (é estática); o login é feito no formulário do painel e o JS
+    // envia o header Authorization em cada pedido à API.
+    int is_web_page = (strcmp(path, g_web_path) == 0 ||
+                       (strcmp(g_web_path, "/web") == 0 && strcmp(path, "/web/") == 0));
+    if (g_auth_user[0] != '\0' && g_auth_password[0] != '\0' && !is_web_page) {
         if (!auth_header_found || !check_basic_auth(auth_header)) {
             send_unauthorized(client_fd);
             return;

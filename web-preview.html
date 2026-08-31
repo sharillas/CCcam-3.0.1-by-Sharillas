@@ -57,7 +57,14 @@ tbody tr:hover { background:rgba(255,255,255,0.02); }
 .badge.ok { background:rgba(46,204,113,0.12); color:var(--green); }
 .badge.err { background:rgba(239,83,80,0.12); color:var(--red); }
 .badge.idle { background:rgba(139,149,161,0.12); color:var(--muted); }
-.kick { background:transparent; border:1px solid rgba(239,83,80,0.4); color:var(--red); border-radius:6px; padding:3px 10px; font-size:11.5px; cursor:pointer; transition:0.2s; }
+.login-overlay { position:fixed; inset:0; background:rgba(10,14,22,0.92); display:flex; align-items:center; justify-content:center; z-index:50; }
+.login-overlay.hidden { display:none; }
+.login-box { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; width:320px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+.login-box h3 { font-size:16px; margin-bottom:2px; }
+.login-box input { width:100%; box-sizing:border-box; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:13px; margin-bottom:8px; }
+.login-box input:focus { outline:none; border-color:var(--accent); }
+.login-error { color:var(--red); font-size:12px; margin-top:10px; min-height:16px; }
+#btnLogin { width:100%; margin-top:12px; }
 .kick:hover { background:var(--red); color:#fff; }
 .bars { display:flex; flex-direction:column; gap:10px; }
 .bar-row { display:grid; grid-template-columns:110px 1fr 40px; align-items:center; gap:10px; font-size:12.5px; }
@@ -167,6 +174,17 @@ socio:partilha:2:3:0</textarea>
   </section>
 </main>
 <footer>CCcam 3.0.1 - build.v31.08.2026.17:42 - All rights reserved - Sharillas@2026</footer>
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <div class="logo" style="margin:0 auto 10px;">C3</div>
+    <h3>CCcam 3.0.1</h3>
+    <p style="color:var(--muted); font-size:12px; margin-bottom:16px;">Painel por Sharillas@2026</p>
+    <input type="text" id="loginUser" placeholder="Utilizador">
+    <input type="password" id="loginPass" placeholder="Password" style="margin-top:8px;">
+    <button class="btn primary" id="btnLogin" style="width:100%; margin-top:12px;">Entrar</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
 <div id="toast"></div>
 <script>
 const H = [8, 12, 9, 15, 22, 18, 26, 20, 24, 17, 29, 31, 24, 19, 27, 33, 28, 21, 25, 30, 24, 18, 22, 26, 20, 15, 19, 23, 27, 21];
@@ -197,6 +215,7 @@ document.addEventListener('click', e => {
 $('btnRefresh').onclick = () => { H.push(Math.floor(10 + Math.random()*25)); if (H.length > 60) H.shift(); drawChart(); $('lastUpdate').textContent = new Date().toLocaleTimeString('pt-PT'); toast('Dados atualizados', true); };
 $('btnKeys').onclick = () => toast('Chaves recarregadas', true);
 $('btnPause').onclick = () => { paused = !paused; $('btnPause').textContent = paused ? '▶ Retomar' : '⏸ Pausar'; $('btnPause').classList.toggle('paused', paused); };
+$('btnLogin').onclick = () => { if (!$('loginUser').value.trim()) { $('loginError').textContent = 'Indica o utilizador'; return; } $('loginOverlay').classList.add('hidden'); toast('Sessão iniciada', true); };
 drawChart();
 setInterval(() => { if (!paused) { H.push(Math.floor(10 + Math.random()*25)); if (H.length > 60) H.shift(); drawChart(); $('lastUpdate').textContent = new Date().toLocaleTimeString('pt-PT'); } }, 3000);
 </script>
