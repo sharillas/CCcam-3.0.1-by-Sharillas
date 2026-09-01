@@ -29,7 +29,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes || true
+          # Cria a release via API (erros ficam visiveis no log)
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases" \
+            -d "{\"tag_name\":\"$RELEASE_TAG\",\"name\":\"$RELEASE_TAG\",\"generate_release_notes\":true}" \
+            -o /tmp/release.json || \
+          curl -sS --fail -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            -o /dev/null || exit 1
+          echo "Release pronta: $RELEASE_TAG"
 
   build:
     needs: create-release
