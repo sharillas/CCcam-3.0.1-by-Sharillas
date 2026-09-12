@@ -267,6 +267,11 @@ Release v3.0.1: binários das 6 arquiteturas + pacotes de código-fonte.
 |   +-- cccam3.readers           # exemplo comentado (local/remoto/emu)
 |   +-- cccam3.service           # unidade systemd de exemplo
 |   +-- README.md                # índice + opções da linha de comandos
++-- packages/ipk/
+|   +-- CONTROL/                 # control/postinst/prerm do pacote opkg
+|   +-- etc/init.d/cccam3        # script de arranque enigma2
+|   +-- usr/lib/enigma2/.../CCcam3/plugin.py   # plugin do menu da box
+|   +-- README.md                # como instalar na box (opkg/python)
 +-- include/
 |   +-- cccam3.h                 # constantes, IDs de mensagens, modos crypto
 |   +-- cccam3_structs.h         # todas as estruturas + cccam_config_t
@@ -327,6 +332,28 @@ make clean
 make
 make test
 ./bin/cccam3 -c conf/cccam3.conf
+```
+
+### 16.1 Instalação em boxes enigma2 (pacote IPK)
+
+As boxes OpenPLi/OpenATV/OpenViX usam `opkg` e podem não ter `wget`/`curl`.
+O pacote `enigma2-plugin-softcams-cccam3_3.0.1_all.ipk` (gerado pela CI)
+inclui os 6 binários estáticos, o init.d, o plugin de menu e as configs:
+
+```sh
+# Método 1 - opkg direto do URL:
+opkg install --force-overwrite https://github.com/sharillas/CCcam-3.0.1-by-Sharillas/releases/download/v3.0.1/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+```
+
+```sh
+# Método 2 - download com Python (existe em todas as boxes enigma2):
+python -c 'import sys
+if sys.version_info[0] >= 3:
+    from urllib.request import urlretrieve
+else:
+    from urllib import urlretrieve
+urlretrieve(sys.argv[1], "/tmp/cccam3.ipk")' https://github.com/sharillas/CCcam-3.0.1-by-Sharillas/releases/download/v3.0.1/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+opkg install --force-overwrite /tmp/cccam3.ipk
 ```
 
 ---
@@ -657,3 +684,85 @@ bloqueio por leitores remotos lentos).
 
 **Versão 3.0.1 estável em produção.** Versões futuras (3.0.2, …) saem de
 implementações novas sobre esta base estável.
+## 22. Compatibilidade com Clientes CCcam Comerciais (especificação e plano)
+
+**Estado: NÃO implementado** — o servidor fala o protocolo próprio (secção 4);
+clientes CCcam comerciais (2.0.11–2.3.x) ainda não se ligam. Esta secção
+documenta o protocolo binário real, extraído da referência GPL
+**OSCam `module-cccam.c`** (licença GPLv3, compatível com este projeto —
+portar com atribuição na fonte).
+
+### 22.1 Sequência de login (comum a 2.0.11–2.3.0)
+
+1. **Seed de 16 bytes**: o servidor envia 14 bytes aleatórios + checksum nos
+   bytes 14–15 (soma dos primeiros 14, começando em `0x1234`).
+2. **Derivação**: ambos os lados aplicam `cc_xor(seed)` — bytes 0..5 são
+   XOR com `"CCcam"` e `buf[8+i] = i * buf[i]` (i=0..7) — e calculam
+   `hash = SHA1(seed_xorado)` (20 bytes).
+3. **Blocos de cifra** (`cc_init_crypt` = stream cipher estilo RC4 com
+   `keytable[256]`, `state`, `counter`, `sum`):
+   - bloco DECRYPT: `cc_init_crypt(hash, 20)` e depois
+     `cc_crypt(dec, seed, 16, DECRYPT)` → `tseed`
+   - bloco ENCRYPT: `cc_init_crypt(tseed, 16)` e depois
+     `cc_crypt(enc, hash, 20, DECRYPT)`
+4. **Eco do hash**: o cliente envia os 20 bytes do hash encriptados com o
+   bloco ENCRYPT (sem header); o servidor decripta com o DECRYPT e compara.
+5. **Username**: 20 bytes (padding a zeros), encriptados.
+6. **Verificação da password**: o servidor executa
+   `cc_crypt(dec, password, strlen, ENCRYPT)` e envia `"CCcam\0"` (6 bytes)
+   encriptado; o cliente decripta e compara com `"CCcam\0"`.
+7. **Confirmação**: o servidor envia 20 bytes (os 5 primeiros = `"CCcam"`);
+   o cliente decripta e verifica o prefixo. Login concluído.
+
+### 22.2 Framing das mensagens (pós-login)
+
+- Header de 4 bytes: `flag(1) cmd(1) len(2, big-endian)` — **tudo
+  encriptado** com o bloco respetivo (envia-se com ENCRYPT, recebe-se e
+  decripta-se com DECRYPT). Sem payload quando `len = 0`.
+
+### 22.3 Pedido de ECM (cliente → servidor)
+
+Payload (13 bytes fixos + ECM):
+```
+caid(2) prid(4) card_id(4) srvid(2) ecmlen(1) ecm(ecmlen)
+```
+Comandos principais: `MSG_CLI_INFO` (info do cliente/cartões),
+`MSG_ECM_REQUEST`, `MSG_CARD_REQ`, `MSG_KEEPALIVE`, `MSG_CARD_DATA`,
+`MSG_SRV_DATA`, `MSG_NEW_CARD`, `MSG_CARD_REMOVED`, `MSG_CW_NOK`...
+
+### 22.4 Versões e modos
+
+| Versão | Build | Notas |
+|---|---|---|
+| 2.0.11 | 2892 | formato clássico |
+| 2.1.1–2.1.4 | 2971/3094/3165/3191 | formato clássico |
+| 2.2.0–2.3.0 | 3290/3316/3367 | **extended mode**: `flag` = índice do ECM (servidor responde com o mesmo índice) |
+| 2.3.2+ | — | cifra **ChaCha20** em vez de CCcrypt (requer referência mais recente do OSCam) |
+
+### 22.5 Plano de implementação (fases)
+
+| Fase | Âmbito | Estado |
+|---|---|---|
+| 1 | Seed+checksum, `cc_xor`+SHA1, `cc_init_crypt`/`cc_crypt`, login completo (7 passos), pedido ECM (formato clássico) e resposta CW para clientes **2.0.11–2.1.4** | 🔜 A implementar |
+| 2 | Card data / keepalive / NEW_CARD / CARD_REMOVED + **extended mode** (2.2.x–2.3.0) | 🔜 A implementar |
+| 3 | ChaCha20 para 2.3.2+; polimento por versão; testes contra clientes reais (CCcam 2.0.11, 2.1.4, 2.3.2) | 🔜 A implementar |
+
+### 22.6 Deteção de protocolo no servidor
+
+O cliente CCcam real **não envia** a mensagem de login própria (0x01 com
+handshake de 16 bytes + user/pass NUL-terminados); depois do seed inicial,
+envia logo o eco de hash (20 bytes crus). A deteção é feita na primeira
+mensagem recebida:
+- começa por `0x01` + handshake + user\0pass\0 → protocolo próprio
+- 20 bytes crus que validam o eco do hash SHA1 → protocolo CCcam real
+
+A integração deve reutilizar `cccam_user_manager_authenticate`,
+`cccam_hop_control_check` e `cccam_ecm_process` — só o **framing/crypto**
+é novo.
+
+### 22.7 Referência
+
+- OSCam `module-cccam.c` / `module-cccam.h` (GPLv3) — funções portadas:
+  `cc_init_crypt`, `cc_crypt`, `cc_xor`, sequência de login, framing.
+- A atribuição ao OSCam deve constar no cabeçalho do novo módulo
+  (ex.: `src/network/cccam3_cc_legacy.c`).
