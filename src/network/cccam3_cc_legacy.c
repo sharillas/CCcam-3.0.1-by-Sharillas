@@ -319,14 +319,11 @@ static int ccl_login(int fd, cclegacy_session_t *s) {
     if (ccl_recv_exact(fd, buf, 20) != 0) return -1;
     cc_crypt(s->dec_table, &s->dec_state, &s->dec_counter, &s->dec_sum,
              buf, 20, 0);
-    if (buf[19] != '\0') {
-        // sem terminação: pode ser nome de 20 bytes exatos
+    {
         char tmp[21];
         memcpy(tmp, buf, 20);
         tmp[20] = '\0';
         snprintf(s->username, sizeof(s->username), "%s", tmp);
-    } else {
-        snprintf(s->username, sizeof(s->username), "%s", (char *)buf);
     }
 
     // 5. Verificação da password ("CCcam\0")
@@ -335,7 +332,7 @@ static int ccl_login(int fd, cclegacy_session_t *s) {
     if (user) {
         user_exists = 1;
         user_enabled = user->enabled;
-        strncpy(password, user->password, sizeof(password) - 1);
+        snprintf(password, sizeof(password), "%s", user->password);
     }
     cccam_user_manager_unlock();
 
