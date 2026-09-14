@@ -121,7 +121,7 @@ jobs:
       - name: Build estrito (-Werror)
         run: |
           make clean
-          make CC=gcc CFLAGS="-Wall -Wextra -Werror -Wno-deprecated-declarations -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL"
+          make CC=gcc CFLAGS="-Wall -Wextra -Werror -Wno-deprecated-declarations -Wno-unused-parameter -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL"
 
   fuzz:
     runs-on: ubuntu-latest

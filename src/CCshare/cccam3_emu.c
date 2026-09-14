@@ -559,6 +559,7 @@ int cccam_emu_get_cw(uint16_t caid, uint16_t provid, uint16_t sid,
 //   4. 0xA11FEED5 (chave "All Feeds")
 static int biss_find_session_word(uint16_t caid, uint16_t sid, uint8_t *sw) {
     uint8_t key[16];
+    (void)caid;
     uint32_t providers[5];
     int count = 0;
 
