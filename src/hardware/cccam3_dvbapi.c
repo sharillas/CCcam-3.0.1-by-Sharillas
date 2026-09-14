@@ -218,7 +218,7 @@ static uint32_t dvbapi_ca_provid(uint16_t caid, const uint8_t *desc, uint8_t dle
             provid = ((uint32_t)desc[12] << 16) | ((uint32_t)desc[13] << 8) | desc[14];
             provid &= 0xFFFFF0;
         }
-    } else if ((caid & 0xFF00) == 0x1800 || (caid & 0xF000) == 0x1800) {
+    } else if ((caid & 0xFF00) == 0x1800) {
         // Nagra: provider de 2 bytes no fim do descritor
         if (dlen == 0x07) {
             provid = ((uint32_t)desc[5] << 8) | desc[6];
@@ -404,7 +404,7 @@ static void *dvbapi_client_thread(void *arg) {
                 // CAT: tabela 0x01 -> descritores CA -> EMM PIDs
                 if (buffer[0] == 0x01 && sec_len >= 8) {
                     uint16_t cat_len = (uint16_t)(((buffer[1] & 0x0F) << 8) | buffer[2]);
-                    if (cat_len + 3 <= sec_len) {
+                    if (cat_len + 3u <= sec_len) {
                         client->demux.emm_pid_count = 0;
                         size_t p = 8;
                         while (p + 2 <= sec_len - 4) {
@@ -508,7 +508,7 @@ static void *dvbapi_thread_func(void *arg) {
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, g_socket_path, sizeof(addr.sun_path) - 1);
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", g_socket_path);
 
     if (bind(g_listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         cccam_log(LOG_ERROR, "DVBAPI: Falha ao bindar %s: %s", g_socket_path, strerror(errno));
