@@ -82,3 +82,62 @@ jobs:
           git add -f ci-debug/ 2>/dev/null || true
           git commit -m "CI debug logs $(date -u +%Y%m%d%H%M%S)" || true
           git push origin HEAD:ci-debug || true
+
+  sanitize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev
+
+      - name: Build com ASan/UBSan
+        run: |
+          make clean
+          make CC=gcc CFLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL" LDFLAGS="-fsanitize=address,undefined"
+
+      - name: Self-tests sob sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          make test
+
+  werror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev
+
+      - name: Build estrito (-Werror)
+        run: |
+          make clean
+          make CC=gcc CFLAGS="-Wall -Wextra -Werror -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL"
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libssl-dev
+
+      - name: Fuzz do parser (60s)
+        run: |
+          clang -g -O1 -fsanitize=fuzzer,address -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL \
+            fuzz/parse_fuzz.c \
+            src/network/cccam3_protocol.c \
+            src/network/cccam3_crypto.c \
+            src/network/cccam3_crypto_advanced.c \
+            src/network/cccam3_utils.c \
+            src/core/cccam3_logger.c \
+            -lcrypto -lssl -o /tmp/parse_fuzz
+          /tmp/parse_fuzz -max_total_time=60 -max_len=512

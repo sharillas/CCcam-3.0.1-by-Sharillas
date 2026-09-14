@@ -36,6 +36,7 @@ typedef struct {
     int to_kick;               // Marca para desligar (definido pela API REST)
     int refs;                  // Refcount (pool + utilizadores temporários)
     int zombie;                // Marcado para remoção (memória diferida)
+    uintptr_t thread_handle;   // pthread_t da thread do cliente (para join)
     time_t ecm_window_start;   // Rate limit de ECMs por cliente
     int ecm_window_count;
     uint32_t ecm_total;        // Total de ECMs pedidos (para o painel)

@@ -24,7 +24,7 @@
 #   http://IP:8080/web            (painel web)
 # =====================================================================
 
-VERSION="v3.0.1"
+VERSION="v3.0.2"
 REPO="sharillas/CCcam-3.0.1-by-Sharillas"
 RAW="https://raw.githubusercontent.com/$REPO/main"
 RELEASE_URL="https://github.com/$REPO/releases/download/$VERSION"

@@ -16,6 +16,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <openssl/sha.h>
 
 // --- Constantes de recuperação de falhas ---
 #define READER_MAX_CONSECUTIVE_FAILURES 3
@@ -321,6 +322,8 @@ static int remote_ensure_login(cccam_reader_t *reader) {
     switch (hs_mode) {
         case HANDSHAKE_MODE_RSA_AES:
         case HANDSHAKE_MODE_AES_GCM:
+        case HANDSHAKE_MODE_LEGACY:
+            // Legado também usa AES-GCM (chave derivada por SHA256)
             wire_mode = CCCAM_CRYPT_MODE_AES_GCM;
             break;
         case HANDSHAKE_MODE_AES:
@@ -336,6 +339,14 @@ static int remote_ensure_login(cccam_reader_t *reader) {
 
     int key_ok = (cccam_handshake_get_session_key(session_key, &key_len) == 0);
     cccam_handshake_unlock();
+
+    if (key_ok && wire_mode == CCCAM_CRYPT_MODE_AES_GCM &&
+        key_len != 16 && key_len != 24 && key_len != 32) {
+        uint8_t derived[SHA256_DIGEST_LENGTH];
+        SHA256(session_key, key_len, derived);
+        memcpy(session_key, derived, SHA256_DIGEST_LENGTH);
+        key_len = SHA256_DIGEST_LENGTH;
+    }
 
     if (key_ok) {
         if (cccam_protocol_set_crypto(&reader->crypto, wire_mode, session_key, key_len) != 0) {

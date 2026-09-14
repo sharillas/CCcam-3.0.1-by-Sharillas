@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <pthread.h>
+#include <sys/stat.h>
 #include <openssl/sha.h>
 
 // --- Variáveis Globais ---
@@ -345,12 +346,13 @@ int cccam_user_manager_auto_register(const char *username, const char *password,
     if (user_out) *user_out = find_user_locked(username);
     pthread_mutex_unlock(&g_users_mutex);
 
-    // Persiste no ficheiro de utilizadores
+    // Persiste no ficheiro de utilizadores (permissões restritas: passwords)
     FILE *fp = fopen(g_users_file, "a");
     if (fp) {
         fprintf(fp, "\n[%s]\npassword = %s\nlevel = %d\nmax_hops = %d\n",
                 username, password, (int)USER_LEVEL_USER, 2);
         fclose(fp);
+        chmod(g_users_file, 0600);
         cccam_log(LOG_INFO, "CCshare: Utilizador '%s' registado e persistido", username);
     } else {
         cccam_log(LOG_WARN, "CCshare: Não foi possível persistir o utilizador '%s' em %s: %s",

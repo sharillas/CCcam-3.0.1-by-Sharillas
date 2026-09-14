@@ -1,8 +1,8 @@
 
-# CCcam 3.0.1 - Emulator for Share - New Generation
+# CCcam 3.0.2 - Emulator for Share - New Generation
 
 [![Licença GPLv3](https://img.shields.io/badge/Licença-GPLv3-blue.svg)](LICENSE)
-[![Versão](https://img.shields.io/badge/Versão-3.0.1-green.svg)](https://github.com/sharillas/CCcam-3.0.1-by-Sharillas)
+[![Versão](https://img.shields.io/badge/Versão-3.0.2-green.svg)](https://github.com/sharillas/CCcam-3.0.1-by-Sharillas)
 [![Plataforma](https://img.shields.io/badge/Plataforma-MIPS%20%7C%20ARM%20%7C%20x86_64-lightgrey.svg)]()
 
 ---

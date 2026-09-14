@@ -110,6 +110,14 @@ void cccam_client_destroy(cccam_client_t *client) {
     }
 }
 
+cccam_client_t *cccam_client_ref(cccam_client_t *client) {
+    if (!client) return NULL;
+    pthread_mutex_lock(&g_pool_mutex);
+    cccam_client_t *c = pool_acquire_locked(client);
+    pthread_mutex_unlock(&g_pool_mutex);
+    return c;
+}
+
 // Liberta uma referência obtida com find_* / get_by_index_ref
 void cccam_client_unref(cccam_client_t *client) {
     int free_now = 0;
@@ -209,9 +217,42 @@ int cccam_client_is_timeout(cccam_client_t *client, int timeout_seconds) {
 }
 
 void cccam_client_close_all(void) {
+    // 1) Marca tudo como zombie e faz shutdown dos sockets:
+    //    as threads de cliente acordam, saem e largam a sua referência
+    pthread_mutex_lock(&g_pool_mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (g_clients[i]) {
-            cccam_client_destroy(g_clients[i]);
+        cccam_client_t *c = g_clients[i];
+        if (c && !c->zombie) {
+            c->zombie = 1;
+            if (c->socket_fd >= 0) {
+                shutdown(c->socket_fd, SHUT_RDWR);
+            }
+        }
+    }
+    pthread_mutex_unlock(&g_pool_mutex);
+
+    // 2) Espera pelas threads (acordam no shutdown/erro de recv)
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        cccam_client_t *c = g_clients[i];
+        if (c && c->thread_handle != 0) {
+            pthread_join((pthread_t)c->thread_handle, NULL);
+            c->thread_handle = 0;
+        }
+    }
+
+    // 3) Remove do pool e liberta (refs == 0 → free)
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        cccam_client_t *c = g_clients[i];
+        if (c) {
+            g_clients[i] = NULL;
+            pthread_mutex_lock(&g_pool_mutex);
+            if (c->refs > 0) c->refs--;
+            int free_now = (c->refs == 0);
+            pthread_mutex_unlock(&g_pool_mutex);
+            if (free_now) {
+                if (c->socket_fd >= 0) close(c->socket_fd);
+                free(c);
+            }
         }
     }
     __atomic_store_n(&g_client_count, 0, __ATOMIC_RELAXED);

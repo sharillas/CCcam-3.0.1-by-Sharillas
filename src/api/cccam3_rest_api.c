@@ -479,6 +479,42 @@ static void json_emu_keys(char *buffer, size_t size) {
         total, biss, via, cw, pvu, nagra, ird);
 }
 
+// Métricas em formato Prometheus (monitorização externa sem parsing de JSON)
+static void metrics_text(char *buffer, size_t size) {
+    int c_total, c_hits, c_misses;
+    int e_total, e_cache_hits, e_cache_misses, e_reader_ok, e_reader_fail;
+    int r_total, r_active, r_local, r_remote;
+
+    cccam_cache_get_stats(&c_total, &c_hits, &c_misses);
+    cccam_ecm_get_stats(&e_total, &e_cache_hits, &e_cache_misses, &e_reader_ok, &e_reader_fail);
+    cccam_card_manager_get_stats(&r_total, &r_active, &r_local, &r_remote);
+
+    snprintf(buffer, size,
+        "# TYPE cccam3_clients gauge\n"
+        "cccam3_clients %d\n"
+        "# TYPE cccam3_cache_entries gauge\n"
+        "cccam3_cache_entries %d\n"
+        "# TYPE cccam3_cache_hits_total counter\n"
+        "cccam3_cache_hits_total %d\n"
+        "# TYPE cccam3_cache_misses_total counter\n"
+        "cccam3_cache_misses_total %d\n"
+        "# TYPE cccam3_ecm_total counter\n"
+        "cccam3_ecm_total %d\n"
+        "# TYPE cccam3_ecm_reader_success_total counter\n"
+        "cccam3_ecm_reader_success_total %d\n"
+        "# TYPE cccam3_ecm_reader_fail_total counter\n"
+        "cccam3_ecm_reader_fail_total %d\n"
+        "# TYPE cccam3_readers gauge\n"
+        "cccam3_readers{state=\"total\"} %d\n"
+        "cccam3_readers{state=\"active\"} %d\n"
+        "cccam3_readers{state=\"local\"} %d\n"
+        "cccam3_readers{state=\"remote\"} %d\n",
+        cccam_client_get_count(),
+        c_total, c_hits, c_misses,
+        e_total, e_reader_ok, e_reader_fail,
+        r_total, r_active, r_local, r_remote);
+}
+
 // --- Handler de Requisições HTTP ---
 
 // Compara uma rota com prefixo: "/files/get" == "/files/get" ou "/files/get?..."
@@ -592,6 +628,10 @@ static void rest_file_save(const char *name, const char *content, size_t content
         snprintf(resp, resp_size, "{\"result\": \"write_error\"}");
         return;
     }
+    // Permissões restritas para ficheiros sensíveis (passwords/chaves)
+    if (strcmp(name, "cccam3.users") == 0 || strcmp(name, "SoftCam.Key") == 0) {
+        fchmod(fileno(fp), 0600);
+    }
     // Garante que os dados chegam ao disco antes do rename (anti-corrupção)
     fflush(fp);
     fsync(fileno(fp));
@@ -678,6 +718,24 @@ static void handle_request(int client_fd, char *request, size_t request_len,
     if (strcmp(path, "/") == 0 || strcmp(path, "/status") == 0) {
         json_server_status(json, sizeof(json));
         send_json_fragment(client_fd, json);
+    } else if (strcmp(path, "/healthz") == 0) {
+        // Healthcheck (systemd/watchdog e monitores externos)
+        send_http_response(client_fd, 200, "OK", "text/plain", "ok\n");
+    } else if (strcmp(path, "/metrics") == 0) {
+        metrics_text(json, sizeof(json));
+        send_http_response(client_fd, 200, "OK", "text/plain; version=0.0.4", json);
+    } else if (path_is_route(path, "/dvb/zap")) {
+        char sid_str[16];
+        if (get_query_param(path, "sid", sid_str, sizeof(sid_str)) == 0) {
+            uint16_t sid = (uint16_t)strtol(sid_str, NULL, 0);
+            if (cccam_dvb_zap(sid) == 0) {
+                send_json_response(client_fd, "{\"result\": \"ok\"}");
+            } else {
+                send_json_response(client_fd, "{\"result\": \"error\"}");
+            }
+        } else {
+            send_json_response(client_fd, "{\"result\": \"missing_sid\"}");
+        }
     } else if (strcmp(path, "/files") == 0) {
         json_files(json, sizeof(json));
         send_json_fragment(client_fd, json);
@@ -1010,16 +1068,26 @@ void cccam_rest_api_cleanup(void) {
     int was_running = g_rest_api_running;
     g_rest_api_running = 0;
     pthread_mutex_unlock(&g_rest_api_mutex);
-    
+
     if (g_rest_api_fd >= 0) {
         close(g_rest_api_fd);
         g_rest_api_fd = -1;
     }
-    
+
     if (g_rest_api_thread_started) {
         pthread_join(g_rest_api_thread, NULL);
         g_rest_api_thread_started = 0;
     }
+
+    // Espera pelas threads de pedido pendentes (têm referências a clientes
+    // e subsistemas; não podem sobreviver ao cleanup)
+    for (int i = 0; i < 30; i++) {
+        if (__atomic_load_n(&g_rest_active_clients, __ATOMIC_RELAXED) <= 0) {
+            break;
+        }
+        usleep(100000);
+    }
+
     (void)was_running;
     cccam_log(LOG_INFO, "REST API: Limpeza concluída");
 }

@@ -17,6 +17,7 @@
 #include "cccam3_emu.h"
 #include "cccam3_emu_des.h"
 #include "cccam3_channels.h"
+#include "cccam3_cc_legacy.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <openssl/sha.h>
 
 static int g_server_fd = -1;
 static int g_newcamd_fd = -1;
@@ -583,7 +585,8 @@ static void server_destroy_client(cccam_client_t *client) {
 static uint8_t handshake_mode_to_crypt_mode(uint8_t mode) {
     switch (mode) {
         case HANDSHAKE_MODE_LEGACY:
-            return CCCAM_CRYPT_MODE_NONE;
+            // Legado também usa AES-GCM (chave derivada por SHA256 da chave SHA1)
+            return CCCAM_CRYPT_MODE_AES_GCM;
         case HANDSHAKE_MODE_RC4:
             return CCCAM_CRYPT_MODE_RC4;
         case HANDSHAKE_MODE_AES:
@@ -679,6 +682,16 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
     if (cccam_handshake_get_session_key(session_key, &key_len) != 0) {
         key_len = 0;
         wire_mode = CCCAM_CRYPT_MODE_NONE;
+    }
+
+    // AES-GCM exige chave de 16/24/32 bytes: deriva por SHA256 quando o
+    // handshake produz outro tamanho (ex.: legado SHA1 -> 20 bytes)
+    if (wire_mode == CCCAM_CRYPT_MODE_AES_GCM &&
+        key_len != 16 && key_len != 24 && key_len != 32) {
+        uint8_t derived[SHA256_DIGEST_LENGTH];
+        SHA256(session_key, key_len, derived);
+        memcpy(session_key, derived, SHA256_DIGEST_LENGTH);
+        key_len = SHA256_DIGEST_LENGTH;
     }
     size_t resp_len = cccam_handshake_get_response_len();
     cccam_handshake_unlock();
@@ -795,62 +808,135 @@ static void handle_newcamd_message(cccam_client_t *client) {
     }
 }
 
-static void handle_client_message(cccam_client_t *client) {
-    if (client->is_newcamd) {
-        handle_newcamd_message(client);
-        return;
-    }
+// --- Thread por cliente ---
+// Cada ligação tem a sua própria thread: um cliente lento já não bloqueia
+// os outros (antes, o loop principal processava clientes um a um).
 
+static void *client_thread_func(void *arg) {
+    cccam_client_t *client = (cccam_client_t *)arg;
     uint8_t buffer[CCCAM3_BUFFER_SIZE];
     size_t msg_len = 0;
 
-    if (read_client_message(client->socket_fd, buffer, sizeof(buffer), &msg_len) != 0) {
-        cccam_log(LOG_INFO, "Cliente %u desligado", client->client_id);
-        server_destroy_client(client);
-        return;
-    }
+    // Deteção de protocolo:
+    //  - clientes CCcam3 (protocolo próprio) enviam o LOGIN primeiro
+    //  - clientes CCcam comerciais esperam que o SERVIDOR envie o seed
+    // Se nada chegar em 2 segundos, assume-se CCcam real (Fase 1: 2.0.11-2.1.4)
+    if (!client->is_newcamd) {
+        fd_set detect_fds;
+        FD_ZERO(&detect_fds);
+        FD_SET(client->socket_fd, &detect_fds);
+        struct timeval detect_tv = {2, 0};
+        int detect = select(client->socket_fd + 1, &detect_fds, NULL, NULL, &detect_tv);
 
-    cccam_msg_header_t header;
-    void *payload = NULL;
-    size_t payload_len = 0;
+        if (detect < 0 && errno != EINTR) {
+            server_destroy_client(client);
+            cccam_client_unref(client);
+            return NULL;
+        }
 
-    if (cccam_protocol_parse(buffer, msg_len, &header, &payload, &payload_len,
-                             &client->crypto) != 0) {
-        cccam_log(LOG_WARN, "Mensagem inválida do cliente %u", client->client_id);
-        server_destroy_client(client);
-        return;
-    }
-
-    int failed = 0;
-    switch (header.msg_id) {
-        case CCCAM_MSG_LOGIN:
-            failed = handle_client_login(client, payload, payload_len);
-            break;
-        case CCCAM_MSG_ECM:
-            failed = handle_client_ecm(client, payload, payload_len);
-            break;
-        case CCCAM_MSG_EMM:
-            // EMM de um cliente: reencaminhar para os leitores remotos
-            if (payload_len >= 4) {
-                const uint8_t *p = (const uint8_t *)payload;
-                uint16_t emm_caid = (uint16_t)((p[0] << 8) | p[1]);
-                uint16_t emm_provid = (uint16_t)((p[2] << 8) | p[3]);
-                cccam_ecm_forward_emm(emm_caid, emm_provid, p + 4,
-                                      (uint16_t)(payload_len - 4));
+        if (detect == 0) {
+            // Sem dados: cliente CCcam comercial
+            cclegacy_session_t legacy;
+            cccam_log(LOG_INFO, "Cliente %u usa o protocolo CCcam real (compatibilidade)",
+                      client->client_id);
+            int legacy_rc = cclegacy_serve(client->socket_fd, client, &legacy);
+            (void)legacy_rc;
+            if (!client->zombie) {
+                server_destroy_client(client);
             }
-            break;
-        case CCCAM_MSG_KEEPALIVE:
-            cccam_client_update_keepalive(client);
-            break;
-        default:
-            cccam_log(LOG_DEBUG, "Mensagem 0x%02X ignorada do cliente %u", header.msg_id, client->client_id);
-            break;
+            cccam_client_unref(client);
+            return NULL;
+        }
     }
 
-    free(payload);
-    if (failed) {
+    while (g_running && !client->zombie &&
+           !__atomic_load_n(&client->to_kick, __ATOMIC_RELAXED)) {
+
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(client->socket_fd, &read_fds);
+
+        struct timeval tv = {1, 0};
+        int activity = select(client->socket_fd + 1, &read_fds, NULL, NULL, &tv);
+
+        if (activity < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+
+        if (activity == 0) {
+            // Verifica o timeout de inatividade a cada segundo
+            if (cccam_client_is_timeout(client, CCCAM3_CLIENT_TIMEOUT)) {
+                cccam_log(LOG_INFO, "Cliente %u expirou (timeout de %d segundos)",
+                          client->client_id, CCCAM3_CLIENT_TIMEOUT);
+                break;
+            }
+            continue;
+        }
+
+        if (client->is_newcamd) {
+            handle_newcamd_message(client);
+        } else {
+            if (read_client_message(client->socket_fd, buffer, sizeof(buffer), &msg_len) != 0) {
+                cccam_log(LOG_INFO, "Cliente %u desligado", client->client_id);
+                break;
+            }
+
+            cccam_msg_header_t header;
+            void *payload = NULL;
+            size_t payload_len = 0;
+
+            if (cccam_protocol_parse(buffer, msg_len, &header, &payload, &payload_len,
+                                     &client->crypto) != 0) {
+                cccam_log(LOG_WARN, "Mensagem inválida do cliente %u", client->client_id);
+                free(payload);
+                break;
+            }
+
+            int failed = 0;
+            switch (header.msg_id) {
+                case CCCAM_MSG_LOGIN:
+                    failed = handle_client_login(client, payload, payload_len);
+                    break;
+                case CCCAM_MSG_ECM:
+                    failed = handle_client_ecm(client, payload, payload_len);
+                    break;
+                case CCCAM_MSG_EMM:
+                    if (payload_len >= 4) {
+                        const uint8_t *p = (const uint8_t *)payload;
+                        uint16_t emm_caid = (uint16_t)((p[0] << 8) | p[1]);
+                        uint16_t emm_provid = (uint16_t)((p[2] << 8) | p[3]);
+                        cccam_ecm_forward_emm(emm_caid, emm_provid, p + 4,
+                                              (uint16_t)(payload_len - 4));
+                    }
+                    break;
+                case CCCAM_MSG_KEEPALIVE:
+                    cccam_client_update_keepalive(client);
+                    break;
+                default:
+                    cccam_log(LOG_DEBUG, "Mensagem 0x%02X ignorada do cliente %u",
+                              header.msg_id, client->client_id);
+                    break;
+            }
+
+            free(payload);
+            if (failed) {
+                break;
+            }
+        }
+    }
+
+    if (__atomic_load_n(&client->to_kick, __ATOMIC_RELAXED)) {
+        cccam_log(LOG_INFO, "Cliente %u desligado (pedido pela API)", client->client_id);
+    }
+
+    // Se o cliente já foi destruído noutro ponto (erro de protocolo), apenas
+    // larga a referência da thread; caso contrário destrói agora.
+    if (!client->zombie) {
         server_destroy_client(client);
     }
+    cccam_client_unref(client);
+    return NULL;
 }
 
 // Loop principal
@@ -875,16 +961,6 @@ int cccam3_run(void) {
             }
         }
 
-        for (int i = 0; i < CCCAM3_CLIENT_SLOTS; i++) {
-            cccam_client_t *client = cccam_client_get_by_index(i);
-            if (client && client->socket_fd >= 0) {
-                FD_SET(client->socket_fd, &read_fds);
-                if (client->socket_fd > max_fd) {
-                    max_fd = client->socket_fd;
-                }
-            }
-        }
-
         struct timeval tv = {1, 0};
         int activity = select(max_fd + 1, &read_fds, NULL, NULL, &tv);
 
@@ -895,11 +971,14 @@ int cccam3_run(void) {
             break;
         }
 
-        // SIGHUP: recarregar o SoftCam.Key sem reiniciar o servidor
+        // SIGHUP: recarregar sem reiniciar (chaves, utilizadores, leitores, canais)
         if (g_reload_requested) {
             g_reload_requested = 0;
-            cccam_log(LOG_INFO, "SIGHUP recebido: a recarregar SoftCam.Key");
+            cccam_log(LOG_INFO, "SIGHUP recebido: a recarregar");
             cccam_emu_reload();
+            cccam_user_manager_reload();
+            cccam_card_manager_reload();
+            cccam_channels_init();
         }
 
         // SIGUSR1: rodar o ficheiro de log
@@ -907,15 +986,6 @@ int cccam3_run(void) {
             g_rotate_requested = 0;
             cccam_log(LOG_INFO, "SIGUSR1 recebido: a rodar o log");
             cccam_log_rotate();
-        }
-
-        // Clientes marcados para desligar (kick pela API REST)
-        for (int i = 0; i < CCCAM3_CLIENT_SLOTS; i++) {
-            cccam_client_t *kclient = cccam_client_get_by_index(i);
-            if (kclient && __atomic_load_n(&kclient->to_kick, __ATOMIC_RELAXED)) {
-                cccam_log(LOG_INFO, "Cliente %u desligado (pedido pela API)", kclient->client_id);
-                server_destroy_client(kclient);
-            }
         }
 
         if (FD_ISSET(g_server_fd, &read_fds)) {
@@ -952,6 +1022,19 @@ int cccam3_run(void) {
                 close(client_fd);
                 continue;
             }
+
+            // Referência extra para a thread (o shutdown do servidor aguarda
+            // por ela antes de libertar a memória)
+            cccam_client_ref(client);
+            pthread_t thread;
+            if (pthread_create(&thread, NULL, client_thread_func, client) != 0) {
+                cccam_log(LOG_ERROR, "Falha ao criar thread para o cliente");
+                cccam_client_unref(client);
+                server_destroy_client(client);
+                continue;
+            }
+            client->thread_handle = (uintptr_t)thread;
+            pthread_detach(thread);
 
             cccam_log(LOG_INFO, "Nova ligação de %s:%d (ID %u)",
                       inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client->client_id);
@@ -994,6 +1077,17 @@ int cccam3_run(void) {
                                   inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
                         server_destroy_client(client);
                     } else {
+                        cccam_client_ref(client);
+                        pthread_t thread;
+                        if (pthread_create(&thread, NULL, client_thread_func, client) != 0) {
+                            cccam_log(LOG_ERROR, "Newcamd: Falha ao criar thread");
+                            cccam_client_unref(client);
+                            server_destroy_client(client);
+                            continue;
+                        }
+                        client->thread_handle = (uintptr_t)thread;
+                        pthread_detach(thread);
+
                         cccam_log(LOG_INFO, "Newcamd: Nova ligação de %s:%d (ID %u)",
                                   inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client->client_id);
                     }
@@ -1001,24 +1095,8 @@ int cccam3_run(void) {
             }
         }
 
-        for (int i = 0; i < CCCAM3_CLIENT_SLOTS; i++) {
-            cccam_client_t *client = cccam_client_get_by_index(i);
-            if (client && client->socket_fd >= 0 && FD_ISSET(client->socket_fd, &read_fds)) {
-                handle_client_message(client);
-            }
-        }
-
-        time_t now = time(NULL);
-        for (int i = 0; i < CCCAM3_CLIENT_SLOTS; i++) {
-            cccam_client_t *client = cccam_client_get_by_index(i);
-            if (client && cccam_client_is_timeout(client, CCCAM3_CLIENT_TIMEOUT)) {
-                cccam_log(LOG_INFO, "Cliente %u expirou (timeout de %d segundos)",
-                          client->client_id, CCCAM3_CLIENT_TIMEOUT);
-                server_destroy_client(client);
-            }
-        }
-
         static time_t last_cache_clean = 0;
+        time_t now = time(NULL);
         if (now - last_cache_clean > 30) {
             cccam_ecm_clean_expired_cache();
             last_cache_clean = now;
@@ -1038,15 +1116,17 @@ void cccam3_cleanup(void) {
         close(g_newcamd_fd);
         g_newcamd_fd = -1;
     }
-    // Primeiro as fontes de ECM (que usam ponteiros de clientes):
-    // as threads terminam e largam as referências antes do pool fechar
+    // Fontes de ECM primeiro (largam as referências aos clientes)
     cccam_dvb_cleanup();
     cccam_dvbapi_cleanup();
     cccam_stapi_cleanup();
+    // Fecha todos os clientes e espera pelas threads (join)
     cccam_client_close_all();
     cccam_optimizer_cleanup();
     cccam_handshake_advanced_cleanup();
     cccam_user_manager_cleanup();
+    // A REST por último no bloco de "utilizadores de clientes": espera
+    // também pelas threads de pedido pendentes
     cccam_rest_api_cleanup();
     cccam_hop_control_cleanup();
     cccam_card_manager_cleanup();

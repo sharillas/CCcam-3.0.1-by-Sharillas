@@ -13,7 +13,10 @@ cccam_client_t *cccam_client_create(int socket_fd, struct sockaddr_in *addr);
 // A memória só é libertada quando a última referência fizer unref.
 void cccam_client_destroy(cccam_client_t *client);
 
-// Liberta uma referência obtida com find_by_id / get_by_index_ref
+// +1 referência (para uma thread/contexto que vai usar o cliente)
+cccam_client_t *cccam_client_ref(cccam_client_t *client);
+
+// Liberta uma referência obtida com find_by_id / get_by_index_ref / ref
 void cccam_client_unref(cccam_client_t *client);
 
 // Sem referência - usar APENAS no loop principal (dono do pool)

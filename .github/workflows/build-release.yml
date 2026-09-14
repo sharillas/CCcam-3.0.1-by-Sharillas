@@ -8,7 +8,7 @@ on:
       release_tag:
         description: 'Tag da release onde anexar os binários'
         required: false
-        default: 'v3.0.1'
+        default: 'v3.0.2'
   release:
     types: [published]
 

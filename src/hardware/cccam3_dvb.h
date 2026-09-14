@@ -81,4 +81,8 @@ void cccam_dvb_cleanup(void);
 int cccam_dvb_is_running(void);
 int cccam_dvb_get_channels(cccam_dvb_channel_t *channels, int max_channels);
 
+// Zapping em runtime: muda para o serviço com o SID indicado
+// (o pedido é aplicado pela thread do DVB; 0 devolve sucesso se o SID existe)
+int cccam_dvb_zap(uint16_t sid);
+
 #endif // CCCAM3_DVB_H

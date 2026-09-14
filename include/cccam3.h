@@ -25,7 +25,7 @@
 #include <arpa/inet.h>
 
 // --- Constantes Globais ---
-#define CCCAM3_VERSION "3.0.1"
+#define CCCAM3_VERSION "3.0.2"
 #define CCCAM3_DEFAULT_PORT 12000
 #define CCCAM3_MAX_CLIENTS 100
 #define CCCAM3_BUFFER_SIZE 4096

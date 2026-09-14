@@ -557,6 +557,31 @@ static void dvb_handle_emm(void) {
 
 // --- Thread principal ---
 
+// Pedido de zapping pendente (definido pela API REST, aplicado pela thread)
+static volatile int g_pending_zap = -1;
+
+int cccam_dvb_zap(uint16_t sid) {
+    if (sid == 0) return -1;
+    __atomic_store_n(&g_pending_zap, (int)sid, __ATOMIC_RELAXED);
+    cccam_log(LOG_INFO, "DVB: Pedido de zapping para SID %04X recebido", sid);
+    return 0;
+}
+
+static void dvb_apply_pending_zap(void) {
+    int sid = __atomic_exchange_n(&g_pending_zap, -1, __ATOMIC_RELAXED);
+    if (sid <= 0) return;
+
+    for (int i = 0; i < g_channel_count; i++) {
+        if (g_channels[i].sid == (uint16_t)sid && g_channels[i].ecm_pid != 0) {
+            cccam_log(LOG_INFO, "DVB: Zapping para SID %04X (%s)",
+                      g_channels[i].sid, g_channels[i].name);
+            dvb_select_channel(i);
+            return;
+        }
+    }
+    cccam_log(LOG_WARN, "DVB: SID %04X não encontrado neste transponder", sid);
+}
+
 static void *dvb_thread_func(void *arg) {
     (void)arg;
     int locked = 0;
@@ -578,6 +603,9 @@ static void *dvb_thread_func(void *arg) {
             }
             dvb_setup_emm();
         }
+
+        // Zapping pedido pela API REST
+        dvb_apply_pending_zap();
 
         int n = dvb_read_section(g_demux_fd, g_section_buf, sizeof(g_section_buf), 1000);
         if (n > 0) {
@@ -611,13 +639,29 @@ int cccam_dvb_init(cccam_dvb_config_t *config) {
 
     g_config = *config;
 
+    // Autoscan: se o adaptador configurado não existir, tenta os seguintes
     char path[64];
-    snprintf(path, sizeof(path), "/dev/dvb/adapter%d/frontend%d",
-             g_config.adapter, g_config.frontend);
-    g_frontend_fd = open(path, O_RDWR | O_NONBLOCK);
+    int adapter = g_config.adapter;
+    int opened_adapter = -1;
+
+    for (int try_a = adapter; try_a < adapter + 4; try_a++) {
+        snprintf(path, sizeof(path), "/dev/dvb/adapter%d/frontend%d",
+                 try_a, g_config.frontend);
+        g_frontend_fd = open(path, O_RDWR | O_NONBLOCK);
+        if (g_frontend_fd >= 0) {
+            opened_adapter = try_a;
+            break;
+        }
+    }
     if (g_frontend_fd < 0) {
-        cccam_log(LOG_ERROR, "DVB: Falha ao abrir %s: %s", path, strerror(errno));
+        cccam_log(LOG_ERROR, "DVB: Nenhum /dev/dvb/adapterN/frontend%d encontrado (%s)",
+                  g_config.frontend, strerror(errno));
         return -1;
+    }
+    if (opened_adapter != adapter) {
+        cccam_log(LOG_INFO, "DVB: Adaptador %d não disponível - a usar o adaptador %d",
+                  adapter, opened_adapter);
+        adapter = opened_adapter;
     }
 
     struct dvb_frontend_info info;
@@ -626,7 +670,7 @@ int cccam_dvb_init(cccam_dvb_config_t *config) {
     }
 
     snprintf(path, sizeof(path), "/dev/dvb/adapter%d/demux%d",
-             g_config.adapter, g_config.demux);
+             adapter, g_config.demux);
     g_demux_fd = open(path, O_RDWR | O_NONBLOCK);
     if (g_demux_fd < 0) {
         cccam_log(LOG_ERROR, "DVB: Falha ao abrir %s: %s", path, strerror(errno));
@@ -636,7 +680,7 @@ int cccam_dvb_init(cccam_dvb_config_t *config) {
     }
 
     snprintf(path, sizeof(path), "/dev/dvb/adapter%d/demux%d",
-             g_config.adapter, g_config.demux + 1);
+             adapter, g_config.demux + 1);
     g_pes_demux_fd = open(path, O_RDWR | O_NONBLOCK);
     if (g_pes_demux_fd < 0) {
         cccam_log(LOG_WARN, "DVB: Sem demux de descodificação (%s) - CWs não serão injetadas", path);
@@ -644,7 +688,7 @@ int cccam_dvb_init(cccam_dvb_config_t *config) {
 
     // Demux extra para CAT/EMM (opcional)
     snprintf(path, sizeof(path), "/dev/dvb/adapter%d/demux%d",
-             g_config.adapter, g_config.demux + 2);
+             adapter, g_config.demux + 2);
     g_emm_demux_fd = open(path, O_RDWR | O_NONBLOCK);
     if (g_emm_demux_fd < 0) {
         cccam_log(LOG_DEBUG, "DVB: Sem demux extra para EMM (%s)", path);
@@ -661,7 +705,7 @@ int cccam_dvb_init(cccam_dvb_config_t *config) {
     }
 
     cccam_log(LOG_INFO, "DVB: Leitor de hardware iniciado (adapter %d, frontend %d, %d kHz, SR %d)",
-              g_config.adapter, g_config.frontend, g_config.frequency_khz, g_config.symbol_rate);
+              adapter, g_config.frontend, g_config.frequency_khz, g_config.symbol_rate);
     return 0;
 }
 
