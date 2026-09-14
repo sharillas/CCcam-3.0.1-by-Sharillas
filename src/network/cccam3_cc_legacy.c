@@ -16,6 +16,7 @@
 //      - NOK (0xfe/0xff), keepalive (0x06)
 
 #include "cccam3_cc_legacy.h"
+#include "cccam3.h"
 #include "cccam3_client.h"
 #include "cccam3_logger.h"
 #include "cccam3_ecm.h"

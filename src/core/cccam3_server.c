@@ -311,7 +311,6 @@ int cccam3_init(cccam_config_t *config) {
 
     // Resolver caminhos dos ficheiros de utilizadores e leitores
     // (fallback para /etc/cccam3/ quando o cwd não tem os ficheiros)
-    char resolved_path[256];
     char users_path[256];
     char readers_path[256];
     char emu_key_path[256];
@@ -701,7 +700,7 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
         return -1;
     }
 
-    strncpy(client->username, login.username, sizeof(client->username) - 1);
+    snprintf(client->username, sizeof(client->username), "%s", login.username);
     client->version = login.version;
     client->crypt_mode = wire_mode;
     client->hop_count = user_max_hops;
@@ -1350,7 +1349,9 @@ static void server_daemonize(void) {
         _exit(0);
     }
 
-    chdir("/");
+    if (chdir("/") != 0) {
+        cccam_log(LOG_WARN, "Falha ao mudar para /: %s", strerror(errno));
+    }
 
     int devnull = open("/dev/null", O_RDWR);
     if (devnull >= 0) {

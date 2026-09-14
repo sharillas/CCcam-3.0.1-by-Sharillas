@@ -22,6 +22,7 @@ jobs:
 
       - name: Build
         run: |
+          set -o pipefail
           make clean
           if ! make -j2 2>&1 | tee /tmp/build.log; then
             tail -n 50 /tmp/build.log | sed 's/^/::error::/'
@@ -30,6 +31,7 @@ jobs:
 
       - name: Build with PC/SC
         run: |
+          set -o pipefail
           make clean
           if ! make -j2 USE_PCSC=1 2>&1 | tee /tmp/build_pcsc.log; then
             tail -n 50 /tmp/build_pcsc.log | sed 's/^/::error::/'
@@ -38,6 +40,7 @@ jobs:
 
       - name: Self-tests
         run: |
+          set -o pipefail
           if ! make test 2>&1 | tee /tmp/test.log; then
             tail -n 50 /tmp/test.log | sed 's/^/::error::/'
             exit 1
@@ -137,7 +140,7 @@ jobs:
             src/network/cccam3_protocol.c \
             src/network/cccam3_crypto.c \
             src/network/cccam3_crypto_advanced.c \
-            src/network/cccam3_utils.c \
+            src/core/cccam3_utils.c \
             src/core/cccam3_logger.c \
             -lcrypto -lssl -o /tmp/parse_fuzz
           /tmp/parse_fuzz -max_total_time=60 -max_len=512
