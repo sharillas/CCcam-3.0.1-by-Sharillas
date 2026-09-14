@@ -56,6 +56,8 @@ void cccam_hop_control_cleanup(void) {
 
 int cccam_hop_control_check(uint16_t caid, uint16_t provid, uint16_t sid, 
                             uint8_t hop, uint32_t client_id) {
+    (void)provid;
+    (void)client_id;
     g_hop_total_checks++;
     
     // Limpa entradas expiradas
