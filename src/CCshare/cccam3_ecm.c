@@ -80,6 +80,7 @@ static void ecm_client_ok(uint32_t client_id) {
     cccam_client_t *c = cccam_client_find_by_id(client_id);
     if (c) {
         __atomic_add_fetch(&c->ecm_ok, 1, __ATOMIC_RELAXED);
+        cccam_client_unref(c);
     }
 }
 
@@ -107,6 +108,7 @@ int cccam_ecm_process(cccam_ecm_request_t *request, cccam_ecm_response_t *respon
             __atomic_store_n(&c->cur_sid, request->sid, __ATOMIC_RELAXED);
             __atomic_store_n(&c->cur_channel_at, time(NULL), __ATOMIC_RELAXED);
             __atomic_add_fetch(&c->ecm_total, 1, __ATOMIC_RELAXED);
+            cccam_client_unref(c);
         }
     }
     

@@ -383,10 +383,15 @@ static void json_clients(char *buffer, size_t size) {
 
     int first = 1;
     for (int i = 0; i < CCCAM3_CLIENT_SLOTS; i++) {
-        cccam_client_t *client = cccam_client_get_by_index(i);
+        // Referência mantida durante a leitura (o loop principal pode
+        // marcar o cliente para remoção a qualquer momento)
+        cccam_client_t *client = cccam_client_get_by_index_ref(i);
         if (!client) continue;
 
-        if (used + 384 > size) break;
+        if (used + 384 > size) {
+            cccam_client_unref(client);
+            break;
+        }
 
         // is_authenticated publicado com release no login (escrito depois
         // do username): a leitura com acquire garante consistência
@@ -426,6 +431,7 @@ static void json_clients(char *buffer, size_t size) {
             cur_caid,
             channel ? channel : "—",
             provider ? provider : "—");
+        cccam_client_unref(client);
         first = 0;
     }
     snprintf(buffer + used, size - used, "\n    ]\n  }");
@@ -714,6 +720,7 @@ static void handle_request(int client_fd, char *request, size_t request_len,
             cccam_client_t *c = cccam_client_find_by_id(id);
             if (c) {
                 __atomic_store_n(&c->to_kick, 1, __ATOMIC_RELAXED);
+                cccam_client_unref(c);
                 send_json_response(client_fd, "{\"result\": \"ok\", \"kick\": true}");
             } else {
                 send_json_response(client_fd, "{\"result\": \"not_found\"}");

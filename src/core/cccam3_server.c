@@ -1038,10 +1038,12 @@ void cccam3_cleanup(void) {
         close(g_newcamd_fd);
         g_newcamd_fd = -1;
     }
-    cccam_client_close_all();
+    // Primeiro as fontes de ECM (que usam ponteiros de clientes):
+    // as threads terminam e largam as referências antes do pool fechar
     cccam_dvb_cleanup();
     cccam_dvbapi_cleanup();
     cccam_stapi_cleanup();
+    cccam_client_close_all();
     cccam_optimizer_cleanup();
     cccam_handshake_advanced_cleanup();
     cccam_user_manager_cleanup();

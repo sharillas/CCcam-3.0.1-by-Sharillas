@@ -8,10 +8,22 @@
 #define CCCAM3_CLIENT_SLOTS 100
 
 cccam_client_t *cccam_client_create(int socket_fd, struct sockaddr_in *addr);
+
+// Marca o cliente como zombie (shutdown do socket) e remove-o do pool.
+// A memória só é libertada quando a última referência fizer unref.
 void cccam_client_destroy(cccam_client_t *client);
+
+// Liberta uma referência obtida com find_by_id / get_by_index_ref
+void cccam_client_unref(cccam_client_t *client);
+
+// Sem referência - usar APENAS no loop principal (dono do pool)
 cccam_client_t *cccam_client_find_by_socket(int socket_fd);
-cccam_client_t *cccam_client_find_by_id(uint32_t client_id);
 cccam_client_t *cccam_client_get_by_index(int index);
+
+// Com referência - usar em outras threads; chamar cccam_client_unref() depois
+cccam_client_t *cccam_client_find_by_id(uint32_t client_id);
+cccam_client_t *cccam_client_get_by_index_ref(int index);
+
 int cccam_client_get_count(void);
 void cccam_client_authenticate(cccam_client_t *client);
 void cccam_client_set_hop(cccam_client_t *client, uint8_t hop);
