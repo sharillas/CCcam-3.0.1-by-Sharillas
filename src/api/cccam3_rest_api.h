@@ -15,6 +15,10 @@ void cccam_rest_api_set_auth(const char *user, const char *password);
 // Define o caminho da interface web (por omissão /web)
 void cccam_rest_api_set_web_path(const char *path);
 
+// Regista o caminho real de um ficheiro editável do painel
+// ("cccam3.conf", "cccam3.users", ...). Chamar antes do init.
+void cccam_rest_api_set_file_path(const char *name, const char *path);
+
 // Inicializa a API REST
 int cccam_rest_api_init(int port);
 

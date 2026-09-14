@@ -33,6 +33,7 @@ static int g_running = 1;
 static volatile sig_atomic_t g_reload_requested = 0;
 static volatile sig_atomic_t g_rotate_requested = 0;
 static cccam_config_t g_config;
+static char g_config_path[256] = "conf/cccam3.conf";
 
 // --- Listas de IPs (allow/deny) ---
 
@@ -44,16 +45,37 @@ static uint32_t g_deny_ips[SERVER_MAX_IP_ENTRIES];
 static int g_deny_ip_prefix[SERVER_MAX_IP_ENTRIES];
 static int g_deny_count = 0;
 
-// Converte um IP em network byte order e devolve o prefixo (1-4 octetos)
+// Converte um IP em network byte order e devolve o número de octetos.
+// Validação estrita: cada octeto tem de ser numérico, <= 255, e não pode
+// haver caracteres extra depois do último.
 static int parse_ip_entry(const char *entry, uint32_t *ip_out) {
-    // Suporta "a.b.c.d" ou prefixos "a.b" / "a.b.c"
-    unsigned int a = 0, b = 0, c = 0, d = 0;
-    int parts = sscanf(entry, "%u.%u.%u.%u", &a, &b, &c, &d);
-    if (parts < 1 || a > 255 || b > 255 || c > 255 || d > 255) {
-        return -1;
+    unsigned int octets[4] = {0, 0, 0, 0};
+    int count = 0;
+
+    if (!entry || entry[0] == '\0') return -1;
+
+    const char *p = entry;
+    while (count < 4) {
+        const char *start = p;
+        while (*p >= '0' && *p <= '9') p++;
+        if (p == start) return -1;          // octeto vazio ("1..2")
+        if (*p != '\0' && *p != '.') return -1; // carácter inválido
+        size_t digits = (size_t)(p - start);
+        if (digits > 3) return -1;
+        unsigned long v = 0;
+        for (const char *q = start; q < p; q++) {
+            v = v * 10 + (unsigned long)(*q - '0');
+        }
+        if (v > 255) return -1;
+        octets[count++] = (unsigned int)v;
+        if (*p == '\0') break;
+        p++; // salta o ponto
     }
-    *ip_out = htonl((a << 24) | (b << 16) | (c << 8) | d);
-    return parts;
+    if (count == 0 || *p != '\0') return -1;
+    if (count < 4 && p[-1] == '.') return -1; // termina em ponto ("1.2.")
+
+    *ip_out = htonl((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]);
+    return count;
 }
 
 static void server_load_ip_lists(void) {
@@ -246,6 +268,13 @@ int cccam3_init(cccam_config_t *config) {
         g_config = *config;
     }
 
+    // O select() usa fd_set: limitar o número de descritores (anti-overflow)
+    if (g_config.max_clients <= 0 || g_config.max_clients > FD_SETSIZE - 16) {
+        cccam_log(LOG_WARN, "max_clients %d fora do intervalo seguro (1..%d) - ajustado",
+                  g_config.max_clients, FD_SETSIZE - 16);
+        g_config.max_clients = FD_SETSIZE - 16;
+    }
+
     // Configurar handlers de sinais
     signal(SIGINT, cccam_signal_handler);
     signal(SIGTERM, cccam_signal_handler);
@@ -281,33 +310,51 @@ int cccam3_init(cccam_config_t *config) {
     // Resolver caminhos dos ficheiros de utilizadores e leitores
     // (fallback para /etc/cccam3/ quando o cwd não tem os ficheiros)
     char resolved_path[256];
-    server_resolve_path("conf/cccam3.readers", resolved_path, sizeof(resolved_path));
-    cccam_card_manager_set_config_file(resolved_path);
-    cccam_log(LOG_INFO, "Ficheiro de leitores: %s", resolved_path);
+    char users_path[256];
+    char readers_path[256];
+    char emu_key_path[256];
+    char providers_path[256];
+    char channelinfo_path[256];
+    char conf_path[256];
+
+    server_resolve_path(g_config_path, conf_path, sizeof(conf_path));
+
+    server_resolve_path("conf/cccam3.readers", readers_path, sizeof(readers_path));
+    cccam_card_manager_set_config_file(readers_path);
+    cccam_log(LOG_INFO, "Ficheiro de leitores: %s", readers_path);
 
     const char *user_file = g_config.user_file[0] != '\0' ? g_config.user_file : "conf/cccam3.users";
-    server_resolve_path(user_file, resolved_path, sizeof(resolved_path));
-    cccam_user_manager_set_config_file(resolved_path);
-    cccam_log(LOG_INFO, "Ficheiro de utilizadores: %s", resolved_path);
+    server_resolve_path(user_file, users_path, sizeof(users_path));
+    cccam_user_manager_set_config_file(users_path);
+    cccam_log(LOG_INFO, "Ficheiro de utilizadores: %s", users_path);
 
     // Ficheiro de chaves da emulação (SoftCam.Key)
     if (g_config.emu_key_file[0] != '\0') {
-        server_resolve_path(g_config.emu_key_file, resolved_path, sizeof(resolved_path));
-        cccam_emu_set_key_file(resolved_path);
-        cccam_log(LOG_INFO, "Ficheiro de chaves EMU: %s", resolved_path);
+        server_resolve_path(g_config.emu_key_file, emu_key_path, sizeof(emu_key_path));
+        cccam_emu_set_key_file(emu_key_path);
+        cccam_log(LOG_INFO, "Ficheiro de chaves EMU: %s", emu_key_path);
+    } else {
+        server_resolve_path("conf/SoftCam.Key", emu_key_path, sizeof(emu_key_path));
+        cccam_emu_set_key_file(emu_key_path);
     }
 
     // Ficheiros de canais/provedores (para o painel web)
     {
-        char prov_path[256];
-        char chan_path[256];
         const char *pf = g_config.providers_file[0] != '\0' ? g_config.providers_file : "conf/CCcam.providers";
         const char *cf = g_config.channelinfo_file[0] != '\0' ? g_config.channelinfo_file : "conf/CCcam.channelinfo";
-        server_resolve_path(pf, prov_path, sizeof(prov_path));
-        server_resolve_path(cf, chan_path, sizeof(chan_path));
-        cccam_channels_set_files(prov_path, chan_path);
+        server_resolve_path(pf, providers_path, sizeof(providers_path));
+        server_resolve_path(cf, channelinfo_path, sizeof(channelinfo_path));
+        cccam_channels_set_files(providers_path, channelinfo_path);
         cccam_channels_init();
     }
+
+    // Regista no editor do painel os caminhos REAIS dos ficheiros
+    cccam_rest_api_set_file_path("cccam3.conf", conf_path);
+    cccam_rest_api_set_file_path("cccam3.users", users_path);
+    cccam_rest_api_set_file_path("cccam3.readers", readers_path);
+    cccam_rest_api_set_file_path("SoftCam.Key", emu_key_path);
+    cccam_rest_api_set_file_path("CCcam.providers", providers_path);
+    cccam_rest_api_set_file_path("CCcam.channelinfo", channelinfo_path);
 
     // Registo automático de utilizadores
     cccam_user_manager_set_auto_register(g_config.auto_register);
@@ -610,6 +657,13 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
     }
     server_login_success(&client->addr);
 
+    // Copiar atributos do utilizador (o ponteiro do authenticate não é
+    // estável: um reload em runtime pode libertar a lista)
+    uint8_t user_max_hops = 0;
+    int user_level = USER_LEVEL_USER;
+    cccam_user_manager_get_max_hops(login.username, &user_max_hops);
+    cccam_user_manager_get_level(login.username, &user_level);
+
     uint8_t handshake_resp[16 + 12 + 16 + 16] = {0};
     // O estado do handshake é global: proteger a sequência completa
     cccam_handshake_lock();
@@ -637,7 +691,7 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
     strncpy(client->username, login.username, sizeof(client->username) - 1);
     client->version = login.version;
     client->crypt_mode = wire_mode;
-    client->hop_count = user->max_hops;
+    client->hop_count = user_max_hops;
     cccam_client_authenticate(client);
 
     uint8_t ack_buffer[CCCAM3_BUFFER_SIZE];
@@ -653,7 +707,7 @@ static int handle_client_login(cccam_client_t *client, const void *payload, size
     }
 
     cccam_log(LOG_INFO, "Cliente '%s' autenticado (nível %d, max hops %d, modo crypto 0x%02X)",
-              login.username, user->level, user->max_hops, wire_mode);
+              login.username, user_level, user_max_hops, wire_mode);
     return 0;
 }
 
@@ -858,7 +912,7 @@ int cccam3_run(void) {
         // Clientes marcados para desligar (kick pela API REST)
         for (int i = 0; i < CCCAM3_CLIENT_SLOTS; i++) {
             cccam_client_t *kclient = cccam_client_get_by_index(i);
-            if (kclient && kclient->to_kick) {
+            if (kclient && __atomic_load_n(&kclient->to_kick, __ATOMIC_RELAXED)) {
                 cccam_log(LOG_INFO, "Cliente %u desligado (pedido pela API)", kclient->client_id);
                 server_destroy_client(kclient);
             }
@@ -890,6 +944,7 @@ int cccam3_run(void) {
 
             struct timeval rcv_timeout = {10, 0};
             setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
+            setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &rcv_timeout, sizeof(rcv_timeout));
 
             cccam_client_t *client = cccam_client_create(client_fd, &client_addr);
             if (!client) {
@@ -920,6 +975,7 @@ int cccam3_run(void) {
             } else {
                 struct timeval rcv_timeout = {10, 0};
                 setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
+                setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &rcv_timeout, sizeof(rcv_timeout));
 
                 cccam_client_t *client = cccam_client_create(client_fd, &client_addr);
                 if (!client) {
@@ -1077,6 +1133,59 @@ static int run_self_tests(void) {
         }
     }
 
+    // AES-CBC por sessão: IV derivado por mensagem (sem ECB)
+    {
+        cccam_crypto_ctx_t ctx;
+        cccam_protocol_reset_crypto(&ctx);
+        uint8_t key[32];
+        for (int i = 0; i < 32; i++) key[i] = (uint8_t)(i * 7 + 1);
+        uint8_t data[64];
+        for (int i = 0; i < 64; i++) data[i] = (uint8_t)(i * 3);
+        uint8_t original[64];
+        memcpy(original, data, sizeof(data));
+        size_t len = 64;
+
+        if (cccam_protocol_set_crypto(&ctx, CCCAM_CRYPT_MODE_AES, key, 32) != 0 ||
+            cccam_protocol_encrypt(&ctx, data, &len, sizeof(data), CCCAM_MSG_ECM) != 0 ||
+            len != 64 ||
+            cccam_protocol_decrypt(&ctx, data, &len, CCCAM_MSG_ECM) != 0 ||
+            len != 64 || memcmp(data, original, 64) != 0) {
+            failures++;
+            printf("TESTE FALHOU: AES-CBC round-trip\n");
+        }
+    }
+
+    // RC4 contínuo: duas mensagens consecutivas não partilham keystream
+    {
+        cccam_crypto_ctx_t ctx;
+        cccam_protocol_reset_crypto(&ctx);
+        uint8_t key[16];
+        for (int i = 0; i < 16; i++) key[i] = (uint8_t)(i + 0x40);
+        uint8_t m1[32], m2[32], o1[32], o2[32];
+        for (int i = 0; i < 32; i++) {
+            m1[i] = (uint8_t)i;
+            m2[i] = (uint8_t)(0xFF - i);
+        }
+        memcpy(o1, m1, 32);
+        memcpy(o2, m2, 32);
+
+        cccam_crypto_ctx_t rx;
+        cccam_protocol_reset_crypto(&rx);
+
+        size_t l1 = 32, l2 = 32;
+        if (cccam_protocol_set_crypto(&ctx, CCCAM_CRYPT_MODE_RC4, key, 16) != 0 ||
+            cccam_protocol_set_crypto(&rx, CCCAM_CRYPT_MODE_RC4, key, 16) != 0 ||
+            cccam_protocol_encrypt(&ctx, m1, &l1, sizeof(m1), CCCAM_MSG_ECM) != 0 ||
+            cccam_protocol_encrypt(&ctx, m2, &l2, sizeof(m2), CCCAM_MSG_ECM) != 0 ||
+            cccam_protocol_decrypt(&rx, m1, &l1, CCCAM_MSG_ECM) != 0 ||
+            cccam_protocol_decrypt(&rx, m2, &l2, CCCAM_MSG_ECM) != 0 ||
+            l1 != 32 || l2 != 32 ||
+            memcmp(m1, o1, 32) != 0 || memcmp(m2, o2, 32) != 0) {
+            failures++;
+            printf("TESTE FALHOU: RC4 contínuo (duas mensagens)\n");
+        }
+    }
+
     // Newcamd DES round-trip
     {
         uint8_t ncd_key[16];
@@ -1222,20 +1331,23 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (daemon_mode) {
-        g_config = config;
-        cccam_log_init(config.log_file, config.log_level);
-        cccam_log(LOG_INFO, "A iniciar em modo daemon...");
-        server_daemonize();
-    } else {
-        cccam_log_init(config.log_file, config.log_level);
-    }
+    // Caminho real da configuração (usado pelo editor do painel e pelo init)
+    strncpy(g_config_path, config_file, sizeof(g_config_path) - 1);
+    g_config_path[sizeof(g_config_path) - 1] = '\0';
+
+    cccam_log_init(config.log_file, config.log_level);
 
     if (config.log_max_mb > 0) {
         cccam_log_set_max_size((long)config.log_max_mb * 1024 * 1024);
     }
 
     cccam_print_config(&config);
+
+    if (daemon_mode) {
+        g_config = config;
+        cccam_log(LOG_INFO, "A iniciar em modo daemon...");
+        server_daemonize();
+    }
 
     if (cccam3_init(&config) != 0) {
         cccam_log(LOG_ERROR, "Falha ao inicializar servidor");

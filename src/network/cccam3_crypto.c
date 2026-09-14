@@ -1,74 +1,85 @@
 #include "cccam3_crypto.h"
 #include <string.h>
-#include <openssl/aes.h>
-#include <openssl/rc4.h>
-#include <openssl/des.h>
+#include <openssl/evp.h>
 
-// --- RC4 ---
-int cccam_crypto_rc4(uint8_t *data, size_t len, const uint8_t *key, size_t key_len) {
-    if (!data || len == 0 || !key || key_len == 0) return -1;
-    RC4_KEY rc4_key;
-    RC4_set_key(&rc4_key, (int)key_len, key);
-    RC4(&rc4_key, len, data, data);
+// --- RC4 (estado contínuo por sessão) ---
+
+int cccam_crypto_rc4_init(cccam_rc4_state_t *state, const uint8_t *key, size_t key_len) {
+    if (!state || !key || key_len == 0 || key_len > 256) return -1;
+
+    for (int i = 0; i < 256; i++) {
+        state->s[i] = (uint8_t)i;
+    }
+    uint8_t j = 0;
+    for (int i = 0; i < 256; i++) {
+        j = (uint8_t)(j + state->s[i] + key[i % key_len]);
+        uint8_t tmp = state->s[i];
+        state->s[i] = state->s[j];
+        state->s[j] = tmp;
+    }
+    state->i = 0;
+    state->j = 0;
+    state->ready = 1;
     return 0;
 }
 
-// --- AES (ECB) ---
-int cccam_crypto_aes(uint8_t *data, size_t len, const uint8_t *key,
-                     size_t key_len, int encrypt) {
-    if (!data || !key || len == 0) return -1;
-    if (len % 16 != 0) return -1;
+int cccam_crypto_rc4_stream(cccam_rc4_state_t *state, uint8_t *data, size_t len) {
+    if (!state || !state->ready || (!data && len > 0)) return -1;
 
-    AES_KEY aes_key;
-    if (key_len == 16) {
-        if (encrypt) AES_set_encrypt_key(key, 128, &aes_key);
-        else AES_set_decrypt_key(key, 128, &aes_key);
-    } else if (key_len == 24) {
-        if (encrypt) AES_set_encrypt_key(key, 192, &aes_key);
-        else AES_set_decrypt_key(key, 192, &aes_key);
-    } else if (key_len == 32) {
-        if (encrypt) AES_set_encrypt_key(key, 256, &aes_key);
-        else AES_set_decrypt_key(key, 256, &aes_key);
-    } else {
+    for (size_t n = 0; n < len; n++) {
+        state->i = (uint8_t)(state->i + 1);
+        state->j = (uint8_t)(state->j + state->s[state->i]);
+        uint8_t tmp = state->s[state->i];
+        state->s[state->i] = state->s[state->j];
+        state->s[state->j] = tmp;
+        uint8_t k = state->s[(uint8_t)(state->s[state->i] + state->s[state->j])];
+        data[n] ^= k;
+    }
+    return 0;
+}
+
+// --- CBC (EVP, compatível com OpenSSL 1.1 e 3.x) ---
+
+static int evp_cbc(const EVP_CIPHER *cipher, uint8_t *data, size_t len,
+                   const uint8_t *key, const uint8_t *iv, int iv_len, int encrypt) {
+    EVP_CIPHER_CTX *ctx;
+    int out_len1 = 0, out_len2 = 0;
+    uint8_t iv_copy[16];
+
+    if (!data || !key || !iv || len == 0 || len % (size_t)iv_len != 0) return -1;
+
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) return -1;
+
+    memcpy(iv_copy, iv, (size_t)iv_len);
+    if (EVP_CipherInit_ex(ctx, cipher, NULL, key, iv_copy, encrypt) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
         return -1;
     }
-
-    for (size_t i = 0; i < len; i += 16) {
-        if (encrypt) {
-            AES_encrypt(data + i, data + i, &aes_key);
-        } else {
-            AES_decrypt(data + i, data + i, &aes_key);
-        }
+    EVP_CIPHER_CTX_set_padding(ctx, 0); // sem padding: tamanhos já são múltiplos do bloco
+    if (EVP_CipherUpdate(ctx, data, &out_len1, data, (int)len) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
     }
+    if (EVP_CipherFinal_ex(ctx, data + out_len1, &out_len2) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1;
+    }
+    EVP_CIPHER_CTX_free(ctx);
     return 0;
 }
 
-// --- 3DES (EDE, ECB) ---
-int cccam_crypto_3des(uint8_t *data, size_t len, const uint8_t *key,
-                      size_t key_len, int encrypt) {
-    DES_key_schedule ks1, ks2, ks3;
-    DES_cblock k1, k2, k3;
+int cccam_crypto_aes_cbc(uint8_t *data, size_t len, const uint8_t *key, size_t key_len,
+                         const uint8_t iv[16], int encrypt) {
+    const EVP_CIPHER *cipher = NULL;
+    if (key_len == 16) cipher = EVP_aes_128_cbc();
+    else if (key_len == 24) cipher = EVP_aes_192_cbc();
+    else if (key_len == 32) cipher = EVP_aes_256_cbc();
+    else return -1;
+    return evp_cbc(cipher, data, len, key, iv, 16, encrypt);
+}
 
-    if (!data || !key || len == 0) return -1;
-    if (key_len != 24) return -1;
-    if (len % 8 != 0) return -1;
-
-    memcpy(k1, key, 8);
-    memcpy(k2, key + 8, 8);
-    memcpy(k3, key + 16, 8);
-
-    DES_set_key(&k1, &ks1);
-    DES_set_key(&k2, &ks2);
-    DES_set_key(&k3, &ks3);
-
-    for (size_t i = 0; i < len; i += 8) {
-        if (encrypt) {
-            DES_ecb3_encrypt((DES_cblock *)(data + i), (DES_cblock *)(data + i),
-                             &ks1, &ks2, &ks3, DES_ENCRYPT);
-        } else {
-            DES_ecb3_encrypt((DES_cblock *)(data + i), (DES_cblock *)(data + i),
-                             &ks1, &ks2, &ks3, DES_DECRYPT);
-        }
-    }
-    return 0;
+int cccam_crypto_3des_cbc(uint8_t *data, size_t len, const uint8_t *key,
+                          const uint8_t iv[8], int encrypt) {
+    return evp_cbc(EVP_des_ede3_cbc(), data, len, key, iv, 8, encrypt);
 }

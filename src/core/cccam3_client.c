@@ -104,7 +104,9 @@ int cccam_client_get_count(void) {
 
 void cccam_client_authenticate(cccam_client_t *client) {
     if (client) {
-        client->is_authenticated = 1;
+        // Release: publica também o username/versão/hop escritos antes;
+        // os leitores (painel REST) usam acquire
+        __atomic_store_n(&client->is_authenticated, 1, __ATOMIC_RELEASE);
         cccam_log(LOG_INFO, "Cliente %u autenticado", client->client_id);
     }
 }

@@ -251,23 +251,38 @@ static int ncd_handle_login(int fd, cccam_newcamd_session_t *session,
     }
     memcpy(password, msg->data + pass_off, pass_len);
 
-    // Autenticação: password em claro (newcs/mgcamd) ou MD5-crypt (OSCam)
+    // Autenticação: password em claro (newcs/mgcamd) ou MD5-crypt (OSCam).
+    // A password guardada é copiada sob lock (o ponteiro da lista não é estável).
+    char stored_password[128] = {0};
+    int user_level = 1;
+    int user_exists = 0;
+    int user_enabled = 0;
+
+    cccam_user_manager_lock();
     cccam_user_t *user = cccam_user_manager_get_user(username);
+    if (user) {
+        user_exists = 1;
+        user_enabled = user->enabled;
+        user_level = (int)user->level;
+        strncpy(stored_password, user->password, sizeof(stored_password) - 1);
+    }
+    cccam_user_manager_unlock();
+
     int auth_ok = 0;
     char md5_expected[128];
 
-    if (user && user->enabled) {
-        if (strcmp(user->password, password) == 0) {
+    if (user_exists && user_enabled) {
+        if (strcmp(stored_password, password) == 0) {
             auth_ok = 1;
         } else {
-            md5_crypt(user->password, "abcdefgh", md5_expected);
+            md5_crypt(stored_password, "abcdefgh", md5_expected);
             if (strcmp(md5_expected, password) == 0) {
                 auth_ok = 1;
             }
         }
     }
 
-    if (!auth_ok && cccam_user_manager_auto_register_enabled() && user == NULL) {
+    if (!auth_ok && cccam_user_manager_auto_register_enabled() && !user_exists) {
         // Registo automático: cria o utilizador com a password recebida
         if (cccam_user_manager_auto_register(username, password, &user) == 0) {
             auth_ok = 1;
@@ -276,7 +291,7 @@ static int ncd_handle_login(int fd, cccam_newcamd_session_t *session,
     }
 
     if (!auth_ok) {
-        if (user) {
+        if (user_exists) {
             cccam_log(LOG_WARN, "Newcamd: Password inválida para '%s'", username);
         } else {
             cccam_log(LOG_WARN, "Newcamd: Utilizador '%s' não existe", username);
@@ -291,9 +306,9 @@ static int ncd_handle_login(int fd, cccam_newcamd_session_t *session,
     }
 
     // Chaves de sessão: derivadas da DES key + password (ou MD5-crypt)
-    md5_crypt(user->password, "abcdefgh", md5_expected);
-    cccam_newcamd_login_key(g_ncd_des_key, (const uint8_t *)user->password,
-                            (int)strlen(user->password), session->session_key);
+    md5_crypt(stored_password, "abcdefgh", md5_expected);
+    cccam_newcamd_login_key(g_ncd_des_key, (const uint8_t *)stored_password,
+                            (int)strlen(stored_password), session->session_key);
     cccam_newcamd_login_key(g_ncd_des_key, (const uint8_t *)md5_expected,
                             (int)strlen(md5_expected), session->session_key_alt);
     session->key_mode = 0;
@@ -301,7 +316,7 @@ static int ncd_handle_login(int fd, cccam_newcamd_session_t *session,
     snprintf(session->username, sizeof(session->username), "%s", username);
     session->last_keepalive = time(NULL);
 
-    cccam_log(LOG_INFO, "Newcamd: Cliente '%s' autenticado (nível %d)", username, user->level);
+    cccam_log(LOG_INFO, "Newcamd: Cliente '%s' autenticado (nível %d)", username, user_level);
     return 0;
 }
 
@@ -348,8 +363,11 @@ static int ncd_handle_ecm(int fd, cccam_newcamd_session_t *session,
     request.client_id = session->client_id;
 
     // Limite de hops do utilizador (0 = ilimitado)
-    cccam_user_t *user = cccam_user_manager_get_user(session->username);
-    request.hop = user ? user->max_hops : 3;
+    uint8_t user_max_hops = 3;
+    if (cccam_user_manager_get_max_hops(session->username, &user_max_hops) != 0) {
+        user_max_hops = 3;
+    }
+    request.hop = user_max_hops;
 
     int result = cccam_ecm_process(&request, &response);
 

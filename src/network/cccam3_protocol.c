@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
+#include <openssl/sha.h>
 
 #define GCM_TAG_LEN 16
 
@@ -67,6 +68,20 @@ static void gcm_build_nonce(uint32_t msg_id, uint64_t counter, uint8_t *nonce) {
 static void gcm_build_aad(uint32_t msg_id, uint8_t *aad) {
     uint32_t net_id = cccam_hton32(msg_id);
     memcpy(aad, &net_id, 4);
+}
+
+// IV de CBC derivado por mensagem: SHA256(msg_id BE || counter BE)
+// truncado para iv_len bytes. Único por mensagem e por direção.
+static void cbc_build_iv(uint32_t msg_id, uint64_t counter, uint8_t *iv, size_t iv_len) {
+    uint8_t in[12];
+    uint8_t digest[32];
+    uint32_t net_id = cccam_hton32(msg_id);
+    memcpy(in, &net_id, 4);
+    for (int i = 0; i < 8; i++) {
+        in[4 + i] = (uint8_t)(counter >> (56 - 8 * i));
+    }
+    SHA256(in, sizeof(in), digest);
+    memcpy(iv, digest, iv_len);
 }
 
 int cccam_protocol_init(void) {
@@ -135,16 +150,30 @@ int cccam_protocol_encrypt(cccam_crypto_ctx_t *crypto, uint8_t *data, size_t *le
         case CCCAM_CRYPT_MODE_NONE:
             return 0;
         case CCCAM_CRYPT_MODE_RC4:
-            if (cccam_crypto_rc4(data, *len, crypto->key, crypto->key_len) != 0) return -1;
+            // Keystream contínua por direção: nunca reinicializar com a mesma chave
+            if (!crypto->rc4_tx.ready) {
+                if (cccam_crypto_rc4_init(&crypto->rc4_tx, crypto->key, crypto->key_len) != 0) {
+                    return -1;
+                }
+            }
+            if (cccam_crypto_rc4_stream(&crypto->rc4_tx, data, *len) != 0) return -1;
             break;
-        case CCCAM_CRYPT_MODE_AES:
+        case CCCAM_CRYPT_MODE_AES: {
             if (*len % 16 != 0) return -1;
-            if (cccam_crypto_aes(data, *len, crypto->key, crypto->key_len, 1) != 0) return -1;
+            uint8_t iv[16];
+            cbc_build_iv(msg_id, crypto->tx_counter, iv, sizeof(iv));
+            if (cccam_crypto_aes_cbc(data, *len, crypto->key, crypto->key_len, iv, 1) != 0) return -1;
+            crypto->tx_counter++;
             break;
-        case CCCAM_CRYPT_MODE_3DES:
+        }
+        case CCCAM_CRYPT_MODE_3DES: {
             if (*len % 8 != 0) return -1;
-            if (cccam_crypto_3des(data, *len, crypto->key, crypto->key_len, 1) != 0) return -1;
+            uint8_t iv[8];
+            cbc_build_iv(msg_id, crypto->tx_counter, iv, sizeof(iv));
+            if (cccam_crypto_3des_cbc(data, *len, crypto->key, iv, 1) != 0) return -1;
+            crypto->tx_counter++;
             break;
+        }
         case CCCAM_CRYPT_MODE_AES_GCM: {
             if (capacity < *len + GCM_TAG_LEN) return -1;
             uint8_t nonce[12];
@@ -180,16 +209,29 @@ int cccam_protocol_decrypt(cccam_crypto_ctx_t *crypto, uint8_t *data, size_t *le
         case CCCAM_CRYPT_MODE_NONE:
             return 0;
         case CCCAM_CRYPT_MODE_RC4:
-            if (cccam_crypto_rc4(data, *len, crypto->key, crypto->key_len) != 0) return -1;
+            if (!crypto->rc4_rx.ready) {
+                if (cccam_crypto_rc4_init(&crypto->rc4_rx, crypto->key, crypto->key_len) != 0) {
+                    return -1;
+                }
+            }
+            if (cccam_crypto_rc4_stream(&crypto->rc4_rx, data, *len) != 0) return -1;
             break;
-        case CCCAM_CRYPT_MODE_AES:
+        case CCCAM_CRYPT_MODE_AES: {
             if (*len % 16 != 0) return -1;
-            if (cccam_crypto_aes(data, *len, crypto->key, crypto->key_len, 0) != 0) return -1;
+            uint8_t iv[16];
+            cbc_build_iv(msg_id, crypto->rx_counter, iv, sizeof(iv));
+            if (cccam_crypto_aes_cbc(data, *len, crypto->key, crypto->key_len, iv, 0) != 0) return -1;
+            crypto->rx_counter++;
             break;
-        case CCCAM_CRYPT_MODE_3DES:
+        }
+        case CCCAM_CRYPT_MODE_3DES: {
             if (*len % 8 != 0) return -1;
-            if (cccam_crypto_3des(data, *len, crypto->key, crypto->key_len, 0) != 0) return -1;
+            uint8_t iv[8];
+            cbc_build_iv(msg_id, crypto->rx_counter, iv, sizeof(iv));
+            if (cccam_crypto_3des_cbc(data, *len, crypto->key, iv, 0) != 0) return -1;
+            crypto->rx_counter++;
             break;
+        }
         case CCCAM_CRYPT_MODE_AES_GCM: {
             if (*len < GCM_TAG_LEN) return -1;
             size_t ciphertext_len = *len - GCM_TAG_LEN;

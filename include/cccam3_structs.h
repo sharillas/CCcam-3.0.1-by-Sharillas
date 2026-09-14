@@ -4,14 +4,17 @@
 #include <stdint.h>
 #include <time.h>
 #include <netinet/in.h>
+#include "cccam3_crypto.h"
 
 // --- Contexto de Criptografia por Sessão ---
 typedef struct {
     uint8_t mode;              // CCCAM_CRYPT_MODE_*
     uint8_t key[32];
     size_t key_len;
-    uint64_t tx_counter;       // Contador de mensagens enviadas (nonce GCM)
-    uint64_t rx_counter;       // Contador de mensagens recebidas (nonce GCM)
+    uint64_t tx_counter;       // Contador de mensagens enviadas (nonce/IV)
+    uint64_t rx_counter;       // Contador de mensagens recebidas (nonce/IV)
+    cccam_rc4_state_t rc4_tx;  // Estado RC4 de envio (keystream contínua)
+    cccam_rc4_state_t rc4_rx;  // Estado RC4 de receção
 } cccam_crypto_ctx_t;
 
 // --- Estruturas de Cliente ---

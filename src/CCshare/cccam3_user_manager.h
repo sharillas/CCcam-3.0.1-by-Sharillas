@@ -42,6 +42,16 @@ int cccam_user_manager_init(void);
 // Limpa o gestor de utilizadores
 void cccam_user_manager_cleanup(void);
 
+// Proteção da lista: os ponteiros devolvidos por get_user/get_by_index
+// só são válidos com o lock mantido. Os getters de cópia são seguros sem lock.
+void cccam_user_manager_lock(void);
+void cccam_user_manager_unlock(void);
+
+// Getters de cópia (seguros para usar depois de authenticate sem lock)
+int cccam_user_manager_get_max_hops(const char *username, uint8_t *max_hops);
+int cccam_user_manager_get_level(const char *username, int *level);
+int cccam_user_manager_copy_password(const char *username, char *out, size_t out_size);
+
 // Adiciona um utilizador
 int cccam_user_manager_add_user(const char *username, const char *password,
                                 cccam_user_level_t level, uint8_t max_hops);

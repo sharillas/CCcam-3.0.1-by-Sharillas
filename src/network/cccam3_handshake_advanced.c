@@ -309,12 +309,13 @@ int cccam_handshake_encrypt(uint8_t *data, size_t *len, size_t capacity) {
                 return 0;
             }
         case HANDSHAKE_MODE_AES:
-            if (*len % 16 != 0) {
-                return -1;
-            }
-            return cccam_crypto_aes(data, *len, g_session_key, g_session_key_len, 1);
+            // Modo legado sem IV: retirar suporte (usar cccam_protocol_* com CBC)
+            cccam_log(LOG_WARN, "CCshare: Handshake AES (sem IV) não suportado - usar o protocolo por sessão");
+            return -1;
         case HANDSHAKE_MODE_RC4:
-            return cccam_crypto_rc4(data, *len, g_session_key, g_session_key_len);
+            // RC4 sem estado contínuo: retirar suporte (reutilização de keystream)
+            cccam_log(LOG_WARN, "CCshare: Handshake RC4 não suportado - usar o protocolo por sessão");
+            return -1;
         case HANDSHAKE_MODE_LEGACY:
         default:
             return 0;
@@ -354,12 +355,11 @@ int cccam_handshake_decrypt(uint8_t *data, size_t *len) {
                 return 0;
             }
         case HANDSHAKE_MODE_AES:
-            if (*len % 16 != 0) {
-                return -1;
-            }
-            return cccam_crypto_aes(data, *len, g_session_key, g_session_key_len, 0);
+            cccam_log(LOG_WARN, "CCshare: Handshake AES (sem IV) não suportado - usar o protocolo por sessão");
+            return -1;
         case HANDSHAKE_MODE_RC4:
-            return cccam_crypto_rc4(data, *len, g_session_key, g_session_key_len);
+            cccam_log(LOG_WARN, "CCshare: Handshake RC4 não suportado - usar o protocolo por sessão");
+            return -1;
         case HANDSHAKE_MODE_LEGACY:
         default:
             return 0;

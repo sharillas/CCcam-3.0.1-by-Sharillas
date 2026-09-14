@@ -478,15 +478,21 @@ static void dvb_handle_ecm(const uint8_t *sec, int len) {
     memcpy(req.ecm_data, sec, req.ecm_len);
     req.received_at = time(NULL);
     req.client_id = 0;
-    req.hop = 1;
+    req.hop = 0; // sem limite de hops: a descodificação é local
 
     cccam_ecm_response_t resp;
     int result = cccam_ecm_process(&req, &resp);
     g_total_ecm++;
 
     if (result == 0 && resp.found) {
-        g_total_cw++;
-        dvb_write_cw(resp.cw, parity);
+        // Só injeta a CW se pertencer ao CAID do canal sintonizado
+        if (g_caid == 0 || resp.caid == 0 || resp.caid == g_caid) {
+            g_total_cw++;
+            dvb_write_cw(resp.cw, parity);
+        } else {
+            cccam_log(LOG_WARN, "DVB: CW de CAID %04X ignorada (sintonizado %04X)",
+                      resp.caid, g_caid);
+        }
     } else {
         cccam_log(LOG_DEBUG, "DVB: ECM não resolvido (SID %04X, CAID %04X)", g_service_id, g_caid);
     }
