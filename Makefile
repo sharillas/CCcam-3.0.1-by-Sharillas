@@ -2,7 +2,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL
-LDFLAGS = -lssl -lcrypto -lm -lpthread -ldl
+LDFLAGS = -lssl -lcrypto -lm -lpthread -latomic -ldl
 
 # Suporte a leitores locais de smartcard via PC/SC:
 #   make USE_PCSC=1  (requer libpcsclite-dev)
