@@ -66,7 +66,7 @@ static void md5_crypt(const char *pw, const char *salt, char *out) {
     unsigned int i, pw_len = (unsigned int)strlen(pw);
 
     memset(salt_buf, 0, sizeof(salt_buf));
-    strncpy(salt_buf, salt, 8);
+    snprintf(salt_buf, sizeof(salt_buf), "%.8s", salt);
 
     MD5_Init(&ctx);
     MD5_Update(&ctx, pw, pw_len);
@@ -264,7 +264,7 @@ static int ncd_handle_login(int fd, cccam_newcamd_session_t *session,
         user_exists = 1;
         user_enabled = user->enabled;
         user_level = (int)user->level;
-        strncpy(stored_password, user->password, sizeof(stored_password) - 1);
+        snprintf(stored_password, sizeof(stored_password), "%s", user->password);
     }
     cccam_user_manager_unlock();
 
