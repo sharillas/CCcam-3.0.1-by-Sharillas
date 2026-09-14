@@ -267,8 +267,8 @@ static int remote_ensure_login(cccam_reader_t *reader) {
     cccam_login_msg_t login;
     memset(&login, 0, sizeof(login));
     memcpy(login.handshake, handshake, 16);
-    strncpy(login.username, reader->remote_user, sizeof(login.username) - 1);
-    strncpy(login.password, reader->remote_pass, sizeof(login.password) - 1);
+    snprintf(login.username, sizeof(login.username), "%s", reader->remote_user);
+    snprintf(login.password, sizeof(login.password), "%s", reader->remote_pass);
     login.version = 301;
 
     if (cccam_protocol_build_login(login_buf, &login_len,
