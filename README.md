@@ -25,15 +25,16 @@
 |:---|:---:|:---|
 | Protocolo CCcam (próprio) | ✅ | Servidor multi-cliente com wire format próprio |
 | Protocolo Newcamd real | ✅ | newcs/cs357x (NCD_524): login DES, MD5-crypt, ECM |
-| Encriptação RC4 | ✅ | Modo padrão para compatibilidade |
-| Encriptação AES-256 | ✅ | Suporte a 128/192/256 bits |
-| Encriptação 3DES | ✅ | Modo de segurança adicional |
+| Encriptação RC4 | ✅ | Keystream contínua por sessão (sem reutilização) |
+| Encriptação AES | ✅ | CBC com IV derivado por mensagem (sem ECB) |
+| Encriptação 3DES | ✅ | CBC com IV derivado por mensagem |
 | Encriptação AES-GCM | ✅ | Tráfego autenticado (confidencialidade + integridade) |
 | Criptografia por sessão | ✅ | Chave única por cliente (sem estado global) |
 | Handshake seguro | ✅ | PBKDF2-HMAC-SHA256 + AES-GCM (modo moderno), SHA1 (legado) |
 | EMU real (SoftCam.Key) | ✅ | Viaccess, BISS, Cryptoworks, PowerVU, Nagra2, Irdeto2 |
 | EMM (AU) | ✅ | Reencaminha para leitores remotos + atualiza chaves EMU (Irdeto/PowerVU) |
-| Hardening | ✅ | Rate limit de ECMs, anti-bruteforce, filtros de IP |
+| Hardening | ✅ | Rate limit de ECMs, anti-bruteforce, filtros de IP, REST com thread pool limitada |
+| Concorrência | ✅ | Mutexes por subsistema + refcount no pool de clientes (sem use-after-free) |
 | Operação | ✅ | Daemon (-d), rotação de log, reload por SIGHUP/REST |
 | Controlo do serviço | ✅ | `cccam3 start\|stop\|restart\|status\|log` de qualquer pasta |
 | Gestão REST | ✅ | Clientes (kick), utilizadores, reloads, chaves EMU, ficheiros |
@@ -45,7 +46,7 @@
 | Interface Web | ✅ | Painel visual: clientes com canal atual, ECM OK/NOK, editor de ficheiros |
 | Nomes de canais | ✅ | CCcam.providers + CCcam.channelinfo (19.2E / 13E / 30W + Abertis) |
 | CI | ✅ | Compilação + testes automáticos em cada push |
-| Documentação | ✅ | Guias de instalação e API |
+| Documentação | ✅ | Guias de instalação, API e histórico completo |
 
 ---
 
@@ -118,10 +119,10 @@ cccam3/
 | Modo | Algoritmo | Tamanho da Chave | Estado |
 |:---|:---|:---:|:---|
 | `NONE` | Sem encriptação | - | ⚠️ Apenas para debug |
-| `RC4` | RC4 | 20 bytes | ✅ Estável |
-| `AES` | AES (ECB) | 16/24/32 bytes | ✅ Estável |
-| `3DES` | Triple DES | 24 bytes | ✅ Estável |
-| `AES-GCM` | AES com autenticação | 16/24/32 bytes | ✅ Estável (tráfego autenticado) |
+| `RC4` | RC4 (keystream contínua por sessão/direção) | até 256 bytes | ✅ Estável |
+| `AES` | AES-CBC (IV derivado por mensagem) | 16/24/32 bytes | ✅ Estável |
+| `3DES` | Triple DES-CBC (IV derivado por mensagem) | 24 bytes | ✅ Estável |
+| `AES-GCM` | AES com autenticação (nonce msg_id+contador) | 16/24/32 bytes | ✅ Estável (tráfego autenticado) |
 
 ### Handshake de Autenticação
 
@@ -164,6 +165,27 @@ curl -fsSL https://raw.githubusercontent.com/sharillas/CCcam-3.0.1-by-Sharillas/
 ```
 
 O instalador deteta a arquitetura, descarrega o binário da release (ou compila com `--from-source`), instala as configurações em `/etc/cccam3/` (desativa o DVB automaticamente se não houver `/dev/dvb`), instala o serviço systemd e o wrapper de controlo.
+
+### 1b. Boxes enigma2 (OpenPLi/OpenATV/OpenViX) — pacote IPK
+
+Nas boxes o instalador usa automaticamente o pacote `enigma2-plugin-softcams-cccam3_3.0.1_all.ipk`
+(menu **Menu > Plugins > CCcam3**). Também pode ser instalado à mão, sem `wget`/`curl`:
+
+```sh
+# Método 1 - opkg direto do URL:
+opkg install --force-overwrite https://github.com/sharillas/CCcam-3.0.1-by-Sharillas/releases/download/v3.0.1/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+```
+
+```sh
+# Método 2 - download com Python (existe em todas as boxes):
+python -c 'import sys
+if sys.version_info[0] >= 3:
+    from urllib.request import urlretrieve
+else:
+    from urllib import urlretrieve
+urlretrieve(sys.argv[1], "/tmp/cccam3.ipk")' https://github.com/sharillas/CCcam-3.0.1-by-Sharillas/releases/download/v3.0.1/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+opkg install --force-overwrite /tmp/cccam3.ipk
+```
 
 ### 2. Controlo do serviço (de qualquer pasta)
 

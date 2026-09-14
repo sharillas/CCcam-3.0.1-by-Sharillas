@@ -24,6 +24,28 @@ O instalador:
 5. Desativa o leitor DVB automaticamente se não houver `/dev/dvb` (VPS)
 6. Instala o serviço systemd (ou init.d) e inicia-o
 
+> **Boxes enigma2** (OpenPLi/OpenATV/OpenViX): o instalador deteta o `opkg` e
+> instala automaticamente o pacote `enigma2-plugin-softcams-cccam3_3.0.1_all.ipk`
+> (com entrada **Menu > Plugins > CCcam3**).
+
+### Instalação do IPK sem wget/curl (boxes)
+
+```sh
+# Método 1 - opkg direto do URL:
+opkg install --force-overwrite https://github.com/sharillas/CCcam-3.0.1-by-Sharillas/releases/download/v3.0.1/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+```
+
+```sh
+# Método 2 - download com Python (existe em todas as boxes enigma2):
+python -c 'import sys
+if sys.version_info[0] >= 3:
+    from urllib.request import urlretrieve
+else:
+    from urllib import urlretrieve
+urlretrieve(sys.argv[1], "/tmp/cccam3.ipk")' https://github.com/sharillas/CCcam-3.0.1-by-Sharillas/releases/download/v3.0.1/enigma2-plugin-softcams-cccam3_3.0.1_all.ipk
+opkg install --force-overwrite /tmp/cccam3.ipk
+```
+
 ### Opções do instalador
 
 ```bash

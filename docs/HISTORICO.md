@@ -766,3 +766,65 @@ A integração deve reutilizar `cccam_user_manager_authenticate`,
   `cc_init_crypt`, `cc_crypt`, `cc_xor`, sequência de login, framing.
 - A atribuição ao OSCam deve constar no cabeçalho do novo módulo
   (ex.: `src/network/cccam3_cc_legacy.c`).
+
+---
+
+## 23. Auditoria de Segurança — 19 Correções + Refcount (2026)
+
+Auditoria detalhada ao código de produção. Resultado: **19 correções**
+implementadas e validadas pela CI, mais a resolução da race no pool de clientes.
+
+### 23.1 Críticos corrigidos
+
+| # | Problema | Correção |
+|---|---|---|
+| 1 | RC4 reiniciava a keystream em cada mensagem (XOR-attack trivial) | Estado RC4 contínuo por sessão/direção (`cccam_rc4_state_t` em `cccam_crypto_ctx_t`) |
+| 2 | AES/3DES em modo ECB (sem IV: repetição, reordenação e replay) | **CBC com IV derivado por mensagem** (SHA256 de msg_id + contador, único por direção) via EVP (OpenSSL 1.1/3.x) |
+| 3 | `/files/save` escrevia `Content-Length` declarado mesmo sem o corpo chegar (overread do buffer) | Só grava se o corpo declarado chegou completo; caso contrário 400 |
+| 4 | `user_manager` sem mutex: reload/set_* da REST corriam em paralelo com o `authenticate` do loop principal (use-after-free) | Mutex global + reload copy-swap + getters de cópia (`get_max_hops`/`get_level`/`copy_password`) |
+| 5 | Newcamd: envio do init no caminho do accept | `SO_SNDTIMEO` em todos os sockets aceites |
+
+### 23.2 Altos corrigidos
+
+| # | Problema | Correção |
+|---|---|---|
+| 6 | DVB direto usava `hop = 1` — CWs de readers remotos com hop ≥ 2 eram bloqueadas para a própria box | `hop = 0` (sem limite para descodificação local) |
+| 7 | Painel editava caminhos adivinhados, não os carregados pelo servidor (`-c` ignorado) | Servidor regista os **caminhos reais** resolvidos no arranque (`cccam_rest_api_set_file_path`) |
+| 8 | Data races nos campos de cliente lidos pela REST | Atómicos em `cur_caid/cur_sid/cur_channel_at/ecm_*/to_kick`; `is_authenticated` com release/acquire (publica o username) |
+| 9 | `FD_SET` além de `FD_SETSIZE` se `max_clients` grande | Cap automático de `max_clients` |
+| 10 | REST single-thread: um scanner parava o painel | Thread por pedido + limite de 32 ligações simultâneas |
+
+### 23.3 Médios/baixos corrigidos
+
+| # | Correção |
+|---|---|
+| 11 | Documentado no `examples/cccam3.conf`: Basic auth viaja em claro (usar proxy HTTPS) |
+| 12 | `parse_ip_entry` estrito (octetos numéricos ≤ 255, sem lixo à direita) |
+| 13 | Matching de rotas exato (`/files/get` vs `/files/getx`) |
+| 14 | `fsync` antes do `rename` no editor de ficheiros |
+| 15 | `cccam_print_config` antes da daemonização (já não vai para /dev/null) |
+| 16 | `inet_ntop` na thread REST (fim do `inet_ntoa` não-reentrante em threads) |
+| 17 | Comentário/log: `request->hop` é o **limite** de hops do cliente |
+| 18 | DVB só injeta CW se `resp.caid` bater com o CAID sintonizado |
+| 19 | `send_json_fragment()` explícito (vs `send_json_response()` só JSON completo) |
+
+### 23.4 Refcount no pool de clientes
+
+A última race conhecida: o loop principal destrói clientes enquanto as
+threads de ECM (DVBAPI/DVB) e a REST usam `cccam_client_find_by_id`.
+
+- `cccam_client_t` ganhou `refs` + `zombie`; o pool tem mutex próprio
+- `destroy()` marca zombie, faz `shutdown()` (não `close` — evita reutilização
+  do fd) e liberta a memória **apenas quando a última referência fizer unref**
+- `find_by_id()` / `get_by_index_ref()` devolvem **com referência**
+  (`cccam_client_unref()` obrigatório); o loop principal usa as variantes
+  sem referência (é o dono do pool)
+- Cleanup reordenado: DVB/DVBAPI/STAPI terminam antes do pool fechar
+
+### 23.5 Testes novos
+
+- AES-CBC round-trip (IV derivado por mensagem)
+- RC4 contínuo: duas mensagens consecutivas não partilham keystream
+
+Os 19 pontos + refcount estão fechados e cobertos pela CI (compilação +
+self-tests em cada push).
