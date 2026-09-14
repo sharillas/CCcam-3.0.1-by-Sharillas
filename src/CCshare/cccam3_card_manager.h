@@ -29,7 +29,7 @@ typedef enum {
 } cccam_reader_state_t;
 
 // --- Estrutura do Leitor ---
-typedef struct {
+typedef struct cccam_reader_t {
     uint32_t id;
     char name[CCCAM_READER_NAME_LEN];
     cccam_reader_type_t type;

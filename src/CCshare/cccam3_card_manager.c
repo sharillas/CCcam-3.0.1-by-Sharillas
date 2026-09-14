@@ -176,7 +176,7 @@ static int remote_read_message(int fd, uint8_t *buffer, size_t buf_size,
         return -1;
     }
 
-    return cccam_protocol_parse(buffer, (size_t)total, header, payload,
+    return cccam_protocol_parse(buffer, (size_t)total, header, (void **)payload,
                                 payload_len, crypto);
 }
 
@@ -563,6 +563,7 @@ cccam_reader_t *cccam_card_manager_select_reader(uint16_t caid, uint16_t provid,
     cccam_reader_t *current = g_readers;
     cccam_reader_t *best = NULL;
     int best_score = 9999;
+    (void)sid;
     
     while (current) {
         if (reader_supports_caid(current, caid) && reader_supports_provid(current, provid)) {
