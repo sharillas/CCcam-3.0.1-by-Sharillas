@@ -17,6 +17,10 @@ int cccam_crypto_aes_gcm_encrypt(const uint8_t *plaintext, size_t plaintext_len,
     EVP_CIPHER_CTX *ctx = NULL;
     int len, ciphertext_len;
 
+    if (iv_len != 12) {
+        return -1;
+    }
+
     if (!plaintext || !key || !iv || !ciphertext || !tag || !tag_len) {
         return -1;
     }
@@ -72,6 +76,10 @@ int cccam_crypto_aes_gcm_decrypt(const uint8_t *ciphertext, size_t ciphertext_le
                                   uint8_t *plaintext) {
     EVP_CIPHER_CTX *ctx = NULL;
     int len, plaintext_len;
+
+    if (iv_len != 12 || tag_len != 16) {
+        return -1;
+    }
 
     if (!ciphertext || !key || !iv || !tag || !plaintext) {
         return -1;
@@ -135,6 +143,10 @@ int cccam_crypto_aes_gcm_encrypt_aad(const uint8_t *plaintext, size_t plaintext_
     EVP_CIPHER_CTX *ctx = NULL;
     int len, ciphertext_len;
 
+    if (iv_len != 12) {
+        return -1;
+    }
+
     if (!plaintext || !key || !iv || !ciphertext || !tag || !tag_len) {
         return -1;
     }
@@ -193,6 +205,10 @@ int cccam_crypto_aes_gcm_decrypt_aad(const uint8_t *ciphertext, size_t ciphertex
                                       uint8_t *plaintext) {
     EVP_CIPHER_CTX *ctx = NULL;
     int len, plaintext_len;
+
+    if (iv_len != 12 || tag_len != 16) {
+        return -1;
+    }
 
     if (!ciphertext || !key || !iv || !tag || !plaintext) {
         return -1;
