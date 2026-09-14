@@ -7,7 +7,7 @@ LDFLAGS = -lssl -lcrypto -lm -lpthread -latomic -ldl
 # Suporte a leitores locais de smartcard via PC/SC:
 #   make USE_PCSC=1  (requer libpcsclite-dev)
 ifdef USE_PCSC
-CFLAGS += -DUSE_PCSC
+CFLAGS += -DUSE_PCSC -I/usr/include/PCSC
 LDFLAGS += -lpcsclite
 endif
 

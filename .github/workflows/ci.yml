@@ -99,7 +99,7 @@ jobs:
       - name: Build com ASan/UBSan
         run: |
           make clean
-          make CC=gcc CFLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL" LDFLAGS="-fsanitize=address,undefined"
+          make CC=gcc CFLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined -Wno-deprecated-declarations -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL" LDFLAGS="-fsanitize=address,undefined -lssl -lcrypto -lm -lpthread -latomic"
 
       - name: Self-tests sob sanitizers
         env:
@@ -121,7 +121,7 @@ jobs:
       - name: Build estrito (-Werror)
         run: |
           make clean
-          make CC=gcc CFLAGS="-Wall -Wextra -Werror -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL"
+          make CC=gcc CFLAGS="-Wall -Wextra -Werror -Wno-deprecated-declarations -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL"
 
   fuzz:
     runs-on: ubuntu-latest
