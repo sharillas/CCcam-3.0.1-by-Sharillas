@@ -356,7 +356,7 @@ void cccam_emu_nc_des(uint8_t *key, uint8_t mode, uint8_t *data)
 	unsigned char right[8];
 	unsigned char *p = left;
 
-	short DESShift = (mode & DES_RIGHT) ? 0x8103 : 0xc081;
+	uint16_t DESShift = (mode & DES_RIGHT) ? 0x8103 : 0xc081;
 
 	for (i = 3; i > 0; i--)
 	{
