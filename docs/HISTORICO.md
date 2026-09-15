@@ -828,3 +828,45 @@ threads de ECM (DVBAPI/DVB) e a REST usam `cccam_client_find_by_id`.
 
 Os 19 pontos + refcount estão fechados e cobertos pela CI (compilação +
 self-tests em cada push).
+
+
+
+---
+
+## 24. Compatibilidade CCcam Fase 2 + Feed opkg + Correções EMU (2026)
+
+### 24.1 CCcam comercial — Fase 2 (modo estendido [EXT])
+
+O servidor anuncia `[EXT]` na resposta de login ("CCcam3v3.0.2[EXT]"):
+clientes 2.2.0–2.3.0 passam a usar **ECMs numerados** (flag = índice,
+eco na resposta) e a CW é enviada **crua** (sem `cc_cw_crypt` nem o passo
+extra de sincronização). Clientes antigos (2.0.11–2.1.4) ignoram o sufixo
+e mantêm o modo clássico — ambos coexistem na mesma porta.
+
+- ChaCha20 (2.3.2+): não implementado — esses clientes usam o modo
+  clássico quando o servidor não anuncia suporte a chaCha.
+
+### 24.2 Feed opkg hospedado (GitHub Pages)
+
+- `https://sharillas.github.io/CCcam-3.0.1-by-Sharillas/`
+- `tools/make_opkg_feed.sh` gera o índice; o branch `gh-pages` publica
+  `feed/Packages` + `feed/Packages.gz` + o `.ipk`
+
+Na box:
+
+```sh
+echo 'src/gz cccam3 https://sharillas.github.io/CCcam-3.0.1-by-Sharillas/' > /etc/opkg/cccam3-feed.conf
+opkg update
+opkg install enigma2-plugin-softcams-cccam3
+```
+
+### 24.3 Correções de overflow reais na EMU (relatório de warnings)
+
+| Ficheiro | Correção |
+|---|---|
+| `emu_powervu.c` | `pvu_unmask_emm`: `data[30]` → `data[64]` (o caminho mode 0x03 escrevia em `data+0x28..0x3F` — overflow de stack) |
+| `emu_irdeto.c` | XOR parcial do hash com bounds explícitos (fim do aviso de escrita de 16 bytes em 8) |
+| `emu_powervu.c` | `pvu_sct_len` marcada `unused` (portada mas não usada) |
+
+Os restantes warnings são deprecações do OpenSSL 3.0 (as releases compilam
+com OpenSSL 1.1.1w estático) e fallthroughs intencionais das tabelas IDEA.
