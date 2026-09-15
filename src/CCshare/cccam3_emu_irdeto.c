@@ -119,8 +119,14 @@ static int ird_calculate_hash(const uint8_t *key, const uint8_t *iv,
 		else
 		{
 			l = len - y;
-			ird_xxor(cbuff, l, cbuff, &data[y]);
-			ird_xxor(cbuff + l, 8 - l, cbuff + l, iv + 8);
+			for (int32_t k = 0; k < l; k++)
+			{
+				cbuff[k] ^= data[y + k];
+			}
+			for (int32_t k = 0; k < 8 - l; k++)
+			{
+				cbuff[l + k] ^= iv[8 + k];
+			}
 		}
 
 		cccam_emu_des(cbuff, ks1, 1);

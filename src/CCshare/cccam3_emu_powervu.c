@@ -1876,7 +1876,7 @@ static int pvu_get_ecm_key(uint8_t *key, uint32_t provider, uint8_t key_index)
 	return 0;
 }
 
-static uint16_t pvu_sct_len(const uint8_t *ecm)
+static uint16_t __attribute__((unused)) pvu_sct_len(const uint8_t *ecm)
 {
 	return (uint16_t)(((ecm[1] & 0x0F) << 8) | ecm[2]);
 }
@@ -2195,7 +2195,7 @@ static void pvu_create_data_unmask_emm_mode_03(uint8_t *emmBody, uint8_t *data)
 static void pvu_unmask_emm(uint8_t *emm)
 {
 	uint32_t crc, i, l;
-	uint8_t hashModeEmm, modeUnmask, data[30], mask[16];
+	uint8_t hashModeEmm, modeUnmask, data[64], mask[16];
 
 	uint8_t sourcePos[] =
 	{
