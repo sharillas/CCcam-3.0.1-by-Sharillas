@@ -262,6 +262,29 @@ Abra no navegador: `http://IP-do-servidor:8080/web` e entre com o utilizador/pas
 - Leitores e chaves EMU por sistema
 - **Editor de ficheiros**: edita `cccam3.conf`, `cccam3.users`, `cccam3.readers`, `SoftCam.Key`, `CCcam.providers` e `CCcam.channelinfo` diretamente no navegador (guarda com reload automático)
 
+## 📸 Capturas de Ecrã
+
+### Dashboard
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Login
+
+![Login](docs/screenshots/login.png)
+
+### Editor de ficheiros
+
+![Editor de ficheiros](docs/screenshots/files.png)
+
+### Leitores e chaves EMU
+
+![Leitores e chaves EMU](docs/screenshots/readers.png)
+
+> As imagens acima são capturas de demonstração geradas a partir do painel
+> real (`docs/screenshots/demo-panel.html`) com dados de exemplo. Para as
+> substituir por capturas reais de produção, guarda os PNGs com os mesmos
+> nomes em `docs/screenshots/`.
+
 ---
 
 ## 🛠️ Desenvolvimento

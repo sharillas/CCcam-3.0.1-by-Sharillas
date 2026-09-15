@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CCcam3 — Dashboard (demo)</title>
+<style>
+:root {
+  --bg:#0b0f14; --surface:#11161d; --surface2:#161c26; --border:#1f2833;
+  --text:#e6edf3; --muted:#8b95a1; --accent:#4f8cff; --accent2:#2f6fd6;
+  --green:#2ecc71; --amber:#f0b429; --red:#ef5350; --radius:10px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+.login-overlay { position:fixed; inset:0; background:rgba(10,14,22,0.92); display:flex; align-items:center; justify-content:center; z-index:50; }
+.login-overlay.hidden { display:none; }
+.login-box { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; width:320px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+.login-box h3 { font-size:16px; margin-bottom:2px; }
+.login-box input { width:100%; box-sizing:border-box; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:13px; margin-top:8px; }
+.login-box input:focus { outline:none; border-color:var(--accent); }
+.login-error { color:var(--red); font-size:12px; margin-top:10px; min-height:16px; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif; background:var(--bg); color:var(--text); font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+button { font-family:inherit; }
+.topbar { display:flex; align-items:center; gap:24px; padding:14px 28px; background:rgba(17,22,29,0.85); backdrop-filter:blur(8px); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }
+.brand { display:flex; align-items:center; gap:12px; }
+.logo { width:38px; height:38px; border-radius:9px; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; color:#fff; letter-spacing:0.5px; }
+.name { font-weight:600; font-size:15px; }
+.sub { font-size:11px; color:var(--muted); }
+.status { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--red); transition:0.3s; }
+.dot.on { background:var(--green); box-shadow:0 0 8px rgba(46,204,113,0.7); }
+.sep { opacity:0.4; }
+.actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.last-update { font-size:11px; color:var(--muted); margin-right:6px; }
+.btn { border:none; border-radius:8px; padding:8px 14px; font-size:12.5px; cursor:pointer; transition:0.2s; }
+.btn.primary { background:var(--accent); color:#fff; }
+.btn.primary:hover { background:var(--accent2); }
+.btn.ghost { background:transparent; color:var(--muted); border:1px solid var(--border); }
+.btn.ghost:hover { color:var(--text); border-color:var(--accent); }
+.btn.ghost.paused { color:var(--amber); border-color:var(--amber); }
+main { max-width:1280px; margin:0 auto; padding:24px 28px 40px; }
+.kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:20px; }
+.kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; transition:0.2s; }
+.kpi:hover { border-color:#2c3a4a; }
+.kpi .label { font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); margin-bottom:6px; }
+.kpi .value { font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; }
+.kpi .value.ok { color:var(--green); }
+.kpi .value.warn { color:var(--amber); }
+.kpi .value.bad { color:var(--red); }
+.grid { display:grid; grid-template-columns:1.6fr 1fr; gap:14px; margin-bottom:20px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; margin-bottom:0; }
+.card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.card-head h2 { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); }
+.pill { background:rgba(79,140,255,0.12); color:var(--accent); border-radius:20px; padding:2px 10px; font-size:11.5px; }
+canvas { width:100%; display:block; }
+.kv { display:grid; grid-template-columns:1fr 1fr; gap:10px 18px; }
+.kv .k { color:var(--muted); font-size:12.5px; }
+.kv .v { font-weight:500; font-variant-numeric:tabular-nums; text-align:right; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { text-align:left; padding:9px 12px; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:0.6px; border-bottom:1px solid var(--border); }
+td { padding:9px 12px; border-bottom:1px solid rgba(31,40,51,0.6); font-variant-numeric:tabular-nums; }
+tr:last-child td { border-bottom:none; }
+tbody tr { transition:background 0.15s; }
+tbody tr:hover { background:rgba(255,255,255,0.02); }
+.badge { display:inline-block; padding:2px 10px; border-radius:20px; font-size:11px; font-weight:500; }
+.badge.ok { background:rgba(46,204,113,0.12); color:var(--green); }
+.badge.err { background:rgba(239,83,80,0.12); color:var(--red); }
+.badge.idle { background:rgba(139,149,161,0.12); color:var(--muted); }
+.kick { background:transparent; border:1px solid rgba(239,83,80,0.4); color:var(--red); border-radius:6px; padding:3px 10px; font-size:11.5px; cursor:pointer; transition:0.2s; }
+.kick:hover { background:var(--red); color:#fff; }
+.bars { display:flex; flex-direction:column; gap:10px; }
+.bar-row { display:grid; grid-template-columns:110px 1fr 40px; align-items:center; gap:10px; font-size:12.5px; }
+.bar-row .l { color:var(--muted); }
+.bar-track { height:7px; background:var(--surface2); border-radius:6px; overflow:hidden; }
+.bar-fill { height:100%; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:6px; transition:width 0.6s ease; }
+.bar-row .n { text-align:right; font-variant-numeric:tabular-nums; color:var(--muted); }
+.empty { text-align:center; color:var(--muted); padding:22px 0; font-size:12.5px; }
+footer { text-align:center; color:#3d4854; font-size:11.5px; padding:18px; border-top:1px solid var(--border); }
+#toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:12px 18px; font-size:13px; opacity:0; transform:translateY(10px); transition:0.25s; pointer-events:none; z-index:20; }
+@media (max-width:900px) { .grid { grid-template-columns:1fr; } .topbar { flex-wrap:wrap; } }
+textarea#fileEditor { width:100%; height:340px; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:12px; font-family:Consolas,Monaco,monospace; font-size:12.5px; resize:vertical; line-height:1.4; }
+select#fileSelect { flex:1; min-width:180px; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:13px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><div class="logo">C3</div><div><div class="name">CCcam 3.0.2</div><div class="sub">by Sharillas@2026</div></div></div>
+  <div class="status"><span class="dot on" id="dot"></span><span id="statusText">online</span><span class="sep">·</span><span id="uptime">up 3d 14h</span></div>
+  <div class="actions">
+    <span class="last-update" id="lastUpdate">21:47:12</span>
+    <button class="btn ghost" id="btnPause">⏸ Pausar</button>
+    <button class="btn ghost" id="btnKeys">Recarregar chaves</button>
+    <button class="btn primary" id="btnRefresh">↻ Atualizar</button>
+  </div>
+</header>
+<main>
+  <section class="kpis" id="kpis">
+    <div class="kpi"><div class="label">Clientes</div><div class="value" id="kClients">4</div></div>
+    <div class="kpi"><div class="label">Cache</div><div class="value" id="kCache">37</div></div>
+    <div class="kpi"><div class="label">Hit ratio</div><div class="value ok" id="kRatio">87,4%</div></div>
+    <div class="kpi"><div class="label">ECMs / min</div><div class="value" id="kEcmRate">126</div></div>
+    <div class="kpi"><div class="label">Leitor sucesso</div><div class="value ok" id="kSucesso">17990</div></div>
+    <div class="kpi"><div class="label">Leitor falhas</div><div class="value" id="kFalhas">442</div></div>
+    <div class="kpi"><div class="label">Chaves EMU</div><div class="value" id="kEmu">18</div></div>
+  </section>
+  <section class="grid" id="chartGrid">
+    <div class="card">
+      <div class="card-head"><h2>Atividade ECM</h2><span class="pill" id="chartPeriod">últimos 5 min</span></div>
+      <canvas id="chart" height="170"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Servidor</h2></div>
+      <div class="kv" id="serverInfo"><div class="k">Porta CCcam</div><div class="v">12000</div><div class="k">Porta Newcamd</div><div class="v">34000</div><div class="k">Limite de hops</div><div class="v">3</div><div class="k">Porta do painel</div><div class="v">8080</div><div class="k">Versão</div><div class="v">3.0.2</div></div>
+    </div>
+  </section>
+  <section class="card" style="margin-bottom:20px;" id="clientsCard">
+    <div class="card-head"><h2>Clientes ligados</h2><span class="pill" id="pillClients">4</span></div>
+    <table><thead><tr><th>Utilizador</th><th>IP</th><th>Protocolo</th><th>Canal</th><th>Ligado há</th><th>ECM OK</th><th>ECM NOK</th><th></th></tr></thead>
+    <tbody id="clientsBody">
+      <tr><td>cliente1</td><td>192.168.1.40</td><td>CCcam</td><td>TF1 HD <span style="color:var(--muted);font-size:11px;">(TNTSAT)</span></td><td>2h 12m</td><td style="color:var(--green);">4820</td><td style="color:var(--red);">110</td><td><button class="kick">Expulsar</button></td></tr>
+      <tr><td>sat_antena</td><td>83.132.64.10</td><td>CCcam</td><td>RTP1 HD <span style="color:var(--muted);font-size:11px;">(NOS)</span></td><td>35m</td><td style="color:var(--green);">1190</td><td style="color:var(--red);">5</td><td><button class="kick">Expulsar</button></td></tr>
+      <tr><td>box_cabo</td><td>10.0.0.15</td><td>Newcamd</td><td>SIC <span style="color:var(--muted);font-size:11px;">(NOS)</span></td><td>10m</td><td style="color:var(--green);">640</td><td style="color:var(--red);">18</td><td><button class="kick">Expulsar</button></td></tr>
+      <tr><td>vizinho</td><td>77.54.12.203</td><td>CCcam</td><td>—</td><td>1m</td><td style="color:var(--green);">0</td><td style="color:var(--red);">0</td><td><button class="kick">Expulsar</button></td></tr>
+    </tbody></table>
+  </section>
+  <section class="card" style="margin-bottom:20px;" id="filesCard">
+    <div class="card-head"><h2>Ficheiros</h2><span class="pill">editar</span></div>
+    <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+      <select id="fileSelect"><option selected>cccam3.conf (/etc/cccam3/cccam3.conf)</option><option>cccam3.users (/etc/cccam3/cccam3.users)</option><option>cccam3.readers (/etc/cccam3/cccam3.readers)</option><option>SoftCam.Key (/etc/cccam3/SoftCam.Key)</option></select>
+      <button class="btn primary" id="btnFileSave">💾 Guardar</button>
+      <button class="btn ghost" id="btnFileReload">⟳ Recarregar</button>
+    </div>
+    <textarea id="fileEditor" spellcheck="false"># CCcam3 - configuracao principal
+[global]
+port = 12000
+server_name = CCcam3
+max_clients = 100
+max_ecm_per_sec = 10
+
+[logging]
+enabled = 1
+level = 2
+file = /var/log/cccam3.log
+
+[cache]
+enabled = 1
+timeout = 10
+
+[security]
+allowed_crypt_modes = 0x17
+
+[hop_control]
+max_hops = 3
+timeout = 60
+
+[rest_api]
+enabled = 1
+port = 8080
+user = admin
+password = ********
+
+[newcamd]
+enabled = 1
+port = 34000
+caid = 0500
+key = 0102030405060708090a0b0c0d0e
+
+[dvb]
+enabled = 1
+adapter = 0
+frequency_khz = 11836000
+symbol_rate = 27500000
+delivery_system = auto</textarea>
+    <div class="status-text" id="fileInfo" style="color:var(--muted); font-size:11.5px; margin-top:8px;">/etc/cccam3/cccam3.conf</div>
+  </section>
+  <section class="grid" id="bottomGrid">
+    <div class="card">
+      <div class="card-head"><h2>Leitores</h2><span class="pill" id="pillReaders">3</span></div>
+      <table><thead><tr><th>Nome</th><th>Tipo</th><th>Estado</th><th>CAID</th><th>Hop</th><th>Prior.</th><th>ECMs</th></tr></thead>
+      <tbody id="readersBody">
+        <tr><td>Remote_Reader</td><td>Remoto</td><td><span class="badge ok">OK</span></td><td>0500</td><td>2</td><td>1</td><td>9240</td></tr>
+        <tr><td>EMU_Reader</td><td>Emulação</td><td><span class="badge ok">OK</span></td><td>0000</td><td>0</td><td>2</td><td>5110</td></tr>
+        <tr><td>Local_Reader</td><td>Local</td><td><span class="badge err">Erro</span></td><td>0100</td><td>1</td><td>0</td><td>0</td></tr>
+      </tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Chaves EMU</h2><span class="pill" id="pillEmu">18</span></div>
+      <div class="bars" id="emuBars">
+        <div class="bar-row"><span class="l">BISS</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="n">7</span></div>
+        <div class="bar-row"><span class="l">Viaccess</span><div class="bar-track"><div class="bar-fill" style="width:57%"></div></div><span class="n">4</span></div>
+        <div class="bar-row"><span class="l">Cryptoworks</span><div class="bar-track"><div class="bar-fill" style="width:28%"></div></div><span class="n">2</span></div>
+        <div class="bar-row"><span class="l">PowerVU</span><div class="bar-track"><div class="bar-fill" style="width:42%"></div></div><span class="n">3</span></div>
+        <div class="bar-row"><span class="l">Nagra</span><div class="bar-track"><div class="bar-fill" style="width:14%"></div></div><span class="n">1</span></div>
+        <div class="bar-row"><span class="l">Irdeto</span><div class="bar-track"><div class="bar-fill" style="width:14%"></div></div><span class="n">1</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>CCcam 3.0.2 - build.2026.0914 - All rights reserved - Sharillas@2026</footer>
+<div class="login-overlay hidden" id="loginOverlay">
+  <div class="login-box">
+    <div class="logo" style="margin:0 auto 10px;">C3</div>
+    <h3>CCcam 3.0.2</h3>
+    <p style="color:var(--muted); font-size:12px; margin-bottom:16px;">Painel por Sharillas@2026</p>
+    <input type="text" id="loginUser" placeholder="Utilizador" autocomplete="username" value="admin">
+    <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password" value="********">
+    <button class="btn primary" id="btnLogin" style="width:100%; margin-top:12px;">Entrar</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+const params = new URLSearchParams(location.search);
+const view = params.get('view') || 'dashboard';
+if (view === 'login') {
+  document.getElementById('loginOverlay').classList.remove('hidden');
+}
+if (view === 'files') {
+  document.getElementById('filesCard').scrollIntoView({block:'start'});
+  document.getElementById('kpis').style.display='none';
+}
+if (view === 'readers') {
+  document.getElementById('kpis').style.display='none';
+  document.getElementById('chartGrid').style.display='none';
+  document.getElementById('clientsCard').style.display='none';
+  document.getElementById('filesCard').style.display='none';
+}
+// gráfico demo
+const cv = document.getElementById('chart');
+const ctx = cv.getContext('2d');
+const W = cv.width = cv.offsetWidth, h = cv.height = 170;
+const H = [40,55,62,48,90,120,126,110,95,88,74,102,118,96,84,71,93,108,125,117];
+const max = Math.max(10, ...H);
+ctx.clearRect(0,0,W,h);
+const g = ctx.createLinearGradient(0,0,0,h);
+g.addColorStop(0,'rgba(79,140,255,0.25)'); g.addColorStop(1,'rgba(79,140,255,0)');
+ctx.beginPath();
+H.forEach((v,i)=>{ const x=(i/(H.length-1))*W, y=h-12-(v/max)*(h-34); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+ctx.strokeStyle='#4f8cff'; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+ctx.lineTo(W,h); ctx.lineTo(0,h); ctx.closePath(); ctx.fillStyle=g; ctx.fill();
+</script>
+</body>
+</html>
