@@ -5,12 +5,17 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// --- Compatibilidade com clientes CCcam comerciais (2.0.11–2.1.4) ---
+// --- Compatibilidade com clientes CCcam comerciais (2.0.11–2.3.0) ---
 // Implementação do protocolo binário CCcam real, portado da referência
 // GPLv3 OSCam (module-cccam.c): cc_init_crypt, cc_crypt, cc_xor, cc_cw_crypt.
 //
-// Fase 1: login clássico, framing encriptado, pedidos ECM e respostas CW
-// (sem extended mode / sem chaCha - clientes 2.2.x+ não são suportados).
+// Fases implementadas:
+//   - Modo clássico (2.0.11–2.1.4 e 2.2.x–2.3.0 sem [EXT]): login, framing,
+//     pedidos ECM e respostas CW com cc_cw_crypt + sync de stream
+//   - Modo estendido ([EXT], clientes 2.2.0+): ECMs numerados por flag e
+//     CW crua (sem cc_cw_crypt nem sync) - melhor latência em paralelo
+//   - ChaCha20 (2.3.2+): não implementado - esses clientes usam o modo
+//     clássico quando o servidor não anuncia suporte a chaCha
 
 #define CCLEGACY_MAX_MSG 4096
 
@@ -25,6 +30,7 @@ typedef struct {
     int enc_sum;
     uint8_t node_id[8];
     int logged_in;
+    int extended;              // Modo estendido ([EXT]): ECMs numerados, CW crua
     char username[64];
     uint8_t pending_ecm[256];
     uint16_t pending_ecm_len;

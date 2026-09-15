@@ -834,7 +834,7 @@ static void *client_thread_func(void *arg) {
         }
 
         if (detect == 0) {
-            // Sem dados: cliente CCcam comercial
+            // Sem dados: cliente CCcam comercial (clássico 2.0.11+ ou [EXT])
             cclegacy_session_t legacy;
             cccam_log(LOG_INFO, "Cliente %u usa o protocolo CCcam real (compatibilidade)",
                       client->client_id);

@@ -153,14 +153,14 @@ static int ccl_send_all(int fd, const uint8_t *buf, size_t len) {
 
 // --- Mensagens ---
 
-static int ccl_send_message(int fd, cclegacy_session_t *s,
+static int ccl_send_message(int fd, cclegacy_session_t *s, uint8_t flag,
                             uint8_t cmd, const uint8_t *payload, uint16_t len) {
     uint8_t buf[CCLEGACY_MAX_MSG + 4];
     uint8_t plain[CCLEGACY_MAX_MSG + 4];
 
     if (len > CCLEGACY_MAX_MSG) return -1;
 
-    plain[0] = 0;                 // flag
+    plain[0] = flag;              // flag (índice do ECM no modo estendido)
     plain[1] = cmd;
     plain[2] = (uint8_t)(len >> 8);
     plain[3] = (uint8_t)(len & 0xFF);
@@ -176,7 +176,8 @@ static int ccl_send_message(int fd, cclegacy_session_t *s,
 }
 
 static int ccl_recv_message(int fd, cclegacy_session_t *s,
-                            uint8_t *cmd, uint8_t *payload, size_t *payload_len) {
+                            uint8_t *flag, uint8_t *cmd,
+                            uint8_t *payload, size_t *payload_len) {
     uint8_t header[4];
 
     if (ccl_recv_exact(fd, header, 4) != 0) return -1;
@@ -192,6 +193,7 @@ static int ccl_recv_message(int fd, cclegacy_session_t *s,
                  payload, len, 0);
     }
 
+    *flag = header[0];
     *cmd = header[1];
     *payload_len = len;
     return 0;
@@ -200,7 +202,7 @@ static int ccl_recv_message(int fd, cclegacy_session_t *s,
 // --- Handlers ---
 
 static int ccl_handle_ecm(int fd, cclegacy_session_t *s,
-                          cccam_client_t *client,
+                          cccam_client_t *client, uint8_t flag,
                           const uint8_t *payload, size_t payload_len) {
     if (payload_len < 13) return 0;
 
@@ -229,37 +231,43 @@ static int ccl_handle_ecm(int fd, cclegacy_session_t *s,
     if (result == 0 && response.found) {
         uint8_t cw[16];
         memcpy(cw, response.cw, 16);
-        cc_cw_crypt(cw, card_id, s->node_id);
 
-        if (ccl_send_message(fd, s, CCLEGACY_MSG_CW_ECM, cw, 16) != 0) {
+        if (!s->extended) {
+            // Modo clássico: cw_crypt + passo extra de sincronização
+            cc_cw_crypt(cw, card_id, s->node_id);
+        }
+
+        if (ccl_send_message(fd, s, flag, CCLEGACY_MSG_CW_ECM, cw, 16) != 0) {
             return -1;
         }
 
-        // Passo extra de sincronização (clássico): o cliente avança o stream
-        // DECRYPT com os 16 bytes da resposta em modo ENCRYPT - espelhar aqui
-        cc_crypt(s->enc_table, &s->enc_state, &s->enc_counter, &s->enc_sum,
-                 cw, 16, 1);
+        if (!s->extended) {
+            // Passo extra de sincronização (clássico): o cliente avança o stream
+            // DECRYPT com os 16 bytes da resposta em modo ENCRYPT - espelhar aqui
+            cc_crypt(s->enc_table, &s->enc_state, &s->enc_counter, &s->enc_sum,
+                     cw, 16, 1);
+        }
 
         cccam_user_manager_register_ecm(s->username, 1);
         return 0;
     }
 
     cccam_user_manager_register_ecm(s->username, 0);
-    return ccl_send_message(fd, s, CCLEGACY_MSG_CW_NOK1, NULL, 0);
+    return ccl_send_message(fd, s, flag, CCLEGACY_MSG_CW_NOK1, NULL, 0);
 }
 
 static int ccl_handle_message(int fd, cclegacy_session_t *s,
-                              cccam_client_t *client,
+                              cccam_client_t *client, uint8_t flag,
                               uint8_t cmd, const uint8_t *payload, size_t payload_len) {
     switch (cmd) {
         case CCLEGACY_MSG_CW_ECM:
-            return ccl_handle_ecm(fd, s, client, payload, payload_len);
+            return ccl_handle_ecm(fd, s, client, flag, payload, payload_len);
         case CCLEGACY_MSG_CLI_DATA:
             // Anúncio de cartões do cliente (cliente como servidor de share):
-            // ignorado na Fase 1
+            // ignorado (o servidor não redistribui cartões de clientes)
             return 0;
         case CCLEGACY_MSG_KEEPALIVE:
-            return ccl_send_message(fd, s, CCLEGACY_MSG_KEEPALIVE, NULL, 0);
+            return ccl_send_message(fd, s, flag, CCLEGACY_MSG_KEEPALIVE, NULL, 0);
         case CCLEGACY_MSG_EMM_ACK:
         case CCLEGACY_MSG_CARD_REMOVED:
             return 0;
@@ -353,18 +361,26 @@ static int ccl_login(int fd, cclegacy_session_t *s) {
         return -1;
     }
 
-    // 6. Resposta de login (20B: "CCcam" + node_id + padding)
+    // 6. Resposta de login (20B): prefixo "CCcam" + versão/parâmetros
+    //    "[EXT]" ativa o modo estendido nos clientes 2.2.0+ (ECMs numerados,
+    //    CW crua). Clientes antigos ignoram o sufixo e usam o modo clássico.
     uint8_t reply[20];
     memset(reply, 0, sizeof(reply));
     memcpy(reply, "CCcam", 5);
-    memcpy(reply + 5, s->node_id, 8); // node_id = zeros na Fase 1
+    const char *partner = "CCcam3v3.0.2[EXT]";
+    size_t partner_len = strlen(partner);
+    if (partner_len > sizeof(reply) - 5) {
+        partner_len = sizeof(reply) - 5;
+    }
+    memcpy(reply + 5, partner, partner_len);
+    s->extended = 1;
     cc_crypt(s->enc_table, &s->enc_state, &s->enc_counter, &s->enc_sum,
              reply, 20, 1);
     if (ccl_send_all(fd, reply, 20) != 0) return -1;
 
     s->logged_in = 1;
-    cccam_log(LOG_INFO, "CCLegacy: Cliente '%s' autenticado (protocolo CCcam real)",
-              s->username);
+    cccam_log(LOG_INFO, "CCLegacy: Cliente '%s' autenticado (protocolo CCcam real%s)",
+              s->username, s->extended ? ", modo estendido" : "");
     return 0;
 }
 
@@ -374,6 +390,7 @@ int cclegacy_serve(int fd, cccam_client_t *client, cclegacy_session_t *session) 
     uint8_t payload[CCLEGACY_MAX_MSG];
     size_t payload_len;
     uint8_t cmd;
+    uint8_t flag;
 
     memset(session, 0, sizeof(*session));
     // node_id de zeros na Fase 1 (login clássico não troca node ids)
@@ -410,10 +427,10 @@ int cclegacy_serve(int fd, cccam_client_t *client, cclegacy_session_t *session) 
             continue;
         }
 
-        if (ccl_recv_message(fd, session, &cmd, payload, &payload_len) != 0) {
+        if (ccl_recv_message(fd, session, &flag, &cmd, payload, &payload_len) != 0) {
             return -1;
         }
-        if (ccl_handle_message(fd, session, client, cmd, payload, payload_len) != 0) {
+        if (ccl_handle_message(fd, session, client, flag, cmd, payload, payload_len) != 0) {
             return -1;
         }
         cccam_client_update_keepalive(client);

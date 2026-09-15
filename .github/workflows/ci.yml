@@ -146,3 +146,18 @@ jobs:
             src/core/cccam3_logger.c \
             -lcrypto -lssl -o /tmp/parse_fuzz
           /tmp/parse_fuzz -max_total_time=60 -max_len=512
+
+  warnings-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev
+
+      - name: Listar todos os warnings (sem -Werror)
+        run: |
+          make clean
+          make CC=gcc CFLAGS="-Wall -Wextra -O2 -Iinclude -Isrc/core -Isrc/network -Isrc/CCshare -Isrc/api -Isrc/hardware -DUSE_OPENSSL" 2>&1 | grep -E "warning:" || echo "sem warnings"
